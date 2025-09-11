@@ -1,14 +1,24 @@
+'use client';
+import Link from "next/link";
+
 export default function Navbar() {
   return (
-    <header className="fixed inset-x-0 top-0 z-50 backdrop-blur supports-[backdrop-filter]:bg-black/30 bg-black/40 border-b border-white/10">
-      <div className="mx-auto max-w-6xl px-4 py-3 flex items-center justify-between">
-        <a href="/" className="text-lg font-semibold tracking-tight">Humanity</a>
-        <nav className="flex items-center gap-2">
-          <a href="/about" className="px-3 py-2 rounded hover:bg-white/10">About</a>
-          <a href="/auth/sign-up" className="px-4 py-2 rounded bg-white text-black font-medium">Crear cuenta</a>
-          <a href="/auth/sign-in" className="px-4 py-2 rounded border border-white/20 hover:bg-white/10">Entrar</a>
-        </nav>
-      </div>
+    <header className="pointer-events-auto fixed inset-x-0 top-0 z-20">
+      <nav className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
+        <Link href="/" className="text-sm font-semibold tracking-wide text-white/90 hover:text-white">
+          Humanity
+        </Link>
+        <div className="flex items-center gap-4 text-sm">
+          <Link href="/about" className="text-white/70 hover:text-white">About</Link>
+          <Link href="/auth/sign-in" className="text-white/70 hover:text-white">Sign in</Link>
+          <Link
+            href="/auth/sign-up"
+            className="rounded-lg bg-white/10 px-3 py-1.5 text-white hover:bg-white/20"
+          >
+            Create account
+          </Link>
+        </div>
+      </nav>
     </header>
   );
 }
