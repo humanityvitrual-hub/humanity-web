@@ -2,6 +2,5 @@
 @tailwind components;
 @tailwind utilities;
 
-html, body, #__next { height: 100%; }
+html, body { height: 100%; }
 body { @apply bg-black text-white; }
-a { @apply underline; }
