@@ -1,88 +1,37 @@
-"use client";
+'use client';
+export const dynamic = 'force-dynamic';
 
-import { useState } from "react";
-import Navbar from "@/components/Navbar";
-import Footer from "@/components/Footer";
-import Button from "@/components/ui/Button";
-import { auth, googleProvider } from "@/lib/firebase";
-import { signInWithEmailAndPassword, signInWithPopup } from "firebase/auth";
-import { useRouter } from "next/navigation";
-import Link from "next/link";
+import { useState } from 'react';
 
 export default function SignInPage() {
-  const [email, setEmail] = useState("");
-  const [pwd, setPwd] = useState("");
-  const [loading, setLoading] = useState(false);
-  const router = useRouter();
+  const [email, setEmail] = useState('');
+  const [pwd, setPwd] = useState('');
 
-  const onSubmit = async (e: React.FormEvent) => {
+  const onSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
-    try {
-      await signInWithEmailAndPassword(auth, email, pwd);
-      router.push("/my-world");
-    } catch (err: any) {
-      alert(err?.message || "Error al iniciar sesión");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const onGoogle = async () => {
-    setLoading(true);
-    try {
-      await signInWithPopup(auth, googleProvider);
-      router.push("/my-world");
-    } catch (err: any) {
-      alert(err?.message || "Error con Google");
-    } finally {
-      setLoading(false);
-    }
+    alert(`Mock sign-in: ${email}`);
   };
 
   return (
-    <>
-      <Navbar />
-      <main className="mx-auto max-w-md px-4 py-16">
-        <h1 className="text-2xl font-semibold">Sign in</h1>
-        <p className="mt-2 text-neutral-400">Acceso con Firebase Auth.</p>
-
-        <form onSubmit={onSubmit} className="mt-6 grid gap-3">
-          <label className="grid gap-1">
-            <span className="text-sm">Email</span>
-            <input
-              className="rounded border border-neutral-700 bg-neutral-900 px-3 py-2"
-              type="email" required autoComplete="email"
-              value={email} onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@example.com"
-            />
-          </label>
-
-          <label className="grid gap-1">
-            <span className="text-sm">Contraseña</span>
-            <input
-              className="rounded border border-neutral-700 bg-neutral-900 px-3 py-2"
-              type="password" required autoComplete="current-password"
-              value={pwd} onChange={(e) => setPwd(e.target.value)}
-              placeholder="••••••••"
-            />
-          </label>
-
-          <Button type="submit" disabled={loading}>
-            {loading ? "Entrando..." : "Entrar"}
-          </Button>
-
-          <Button type="button" variant="ghost" onClick={onGoogle} disabled={loading}>
-            Continuar con Google
-          </Button>
+    <main className="min-h-screen flex items-center justify-center p-8">
+      <div className="w-full max-w-sm space-y-4">
+        <h1 className="text-2xl font-bold">Sign In</h1>
+        <form onSubmit={onSubmit} className="space-y-3">
+          <input
+            className="w-full px-3 py-2 rounded bg-white/10 border border-white/20"
+            placeholder="Email" type="email" value={email}
+            onChange={e=>setEmail(e.target.value)} required
+          />
+          <input
+            className="w-full px-3 py-2 rounded bg-white/10 border border-white/20"
+            placeholder="Password" type="password" value={pwd}
+            onChange={e=>setPwd(e.target.value)} required
+          />
+          <button className="w-full px-3 py-2 rounded bg-white text-black font-medium">
+            Continue
+          </button>
         </form>
-
-        <p className="mt-4 text-sm text-neutral-400">
-          ¿No tienes cuenta?{" "}
-          <Link className="underline" href="/auth/sign-up">Crear cuenta</Link>
-        </p>
-      </main>
-      <Footer />
-    </>
+      </div>
+    </main>
   );
 }
