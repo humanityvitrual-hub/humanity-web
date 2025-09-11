@@ -1,46 +1,57 @@
-import Navbar from "@/components/Navbar";
-import Footer from "@/components/Footer";
+import dynamic from "next/dynamic";
+
+const Earth = dynamic(() => import("@/components/Earth"), { ssr: false });
 
 export default function LandingPage() {
   return (
     <>
-      <Navbar />
+      {/* fondo 3D */}
+      <Earth />
+      {/* glow suave */}
+      <div aria-hidden className="hero-bg" />
+      <div aria-hidden className="hero-grid" />
 
-      {/* Fondo decorativo */}
-      <div aria-hidden className="pointer-events-none fixed inset-0 -z-10">
-        <div className="absolute inset-0 bg-[radial-gradient(60%_60%_at_50%_10%,rgba(59,130,246,.25),transparent_70%)]" />
-        <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,.06)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.06)_1px,transparent_1px)] bg-[size:40px_40px]" />
-      </div>
+      {/* navbar */}
+      <header className="navbar">
+        <div className="container inner">
+          <a className="logo" href="/">Humanity</a>
+          <nav>
+            <a className="link" href="/about">About</a>
+            <a className="btn btn-ghost" href="/auth/sign-in">Entrar</a>
+            <a className="btn btn-primary" href="/auth/sign-up">Crear cuenta</a>
+          </nav>
+        </div>
+      </header>
 
-      <main className="mx-auto max-w-6xl px-4 pt-36 pb-16">
-        <section className="text-center">
-          <h1 className="text-5xl sm:text-6xl font-extrabold tracking-tight">
+      {/* hero sobre el 3D */}
+      <main className="section center" style={{paddingTop:'7rem'}}>
+        <div className="container" style={{backdropFilter:'blur(2px)'}}>
+          <h1 style={{fontSize:'clamp(2.75rem,5vw,4rem)',margin:0,fontWeight:800,letterSpacing:'.3px'}}>
             Your Own World
           </h1>
-          <p className="mt-5 text-lg sm:text-xl opacity-80 max-w-2xl mx-auto">
-            Crea y explora tu propio mundo digital. Construimos la base para experiencias
-            personalizadas y escalables.
+          <p style={{maxWidth:720,margin:'1rem auto 0',color:'var(--muted)'}}>
+            Crea y explora tu propio mundo digital. Construimos la base para
+            experiencias personalizadas y escalables.
           </p>
 
-          <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-4">
-            <a href="/my-world" className="px-6 py-3 rounded bg-white text-black font-medium">
-              Enter My World
-            </a>
-            <a href="/about" className="px-6 py-3 rounded border border-white/20 hover:bg-white/10">
-              Learn More
-            </a>
+          <div style={{display:'flex',gap:'1rem',justifyContent:'center',marginTop:'1.5rem',flexWrap:'wrap'}}>
+            <a className="btn btn-primary" href="/my-world">Enter My World</a>
+            <a className="btn btn-ghost" href="/about">Learn More</a>
           </div>
 
-          {/* Highlights */}
-          <div className="mt-12 grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm opacity-80">
-            <div className="rounded-lg border border-white/10 p-4">Tiendas 3D personalizadas</div>
-            <div className="rounded-lg border border-white/10 p-4">Entornos 360° y VR</div>
-            <div className="rounded-lg border border-white/10 p-4">Pagos (Stripe, test)</div>
+          <div className="grid" style={{marginTop:'2rem'}}>
+            <div className="card">Tiendas 3D personalizadas</div>
+            <div className="card">Entornos 360° y VR</div>
+            <div className="card">Pagos (Stripe en modo test)</div>
           </div>
-        </section>
+        </div>
       </main>
 
-      <Footer />
+      <footer className="footer">
+        <div className="container" style={{padding:'1.25rem 0', fontSize:14}}>
+          © {new Date().getFullYear()} Humanity — Your Own World
+        </div>
+      </footer>
     </>
   );
 }
