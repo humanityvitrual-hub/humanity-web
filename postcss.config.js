@@ -1,6 +1,5 @@
 module.exports = {
   plugins: {
-    tailwindcss: {},
-    autoprefixer: {},
+    '@tailwindcss/postcss': {},   // 👈 plugin correcto para Tailwind con Turbopack
   },
 };
