@@ -1,95 +1,69 @@
 'use client';
-import { Canvas, useFrame } from '@react-three/fiber';
+
+import React, { Suspense } from 'react';
+import { Canvas } from '@react-three/fiber';
 import { OrbitControls, Stars, useTexture } from '@react-three/drei';
 import * as THREE from 'three';
-import { AdditiveBlending, DoubleSide } from 'three';
-import { Suspense, useRef } from 'react';
 
-function RealEarth() {
-  const earthRef = useRef<THREE.Mesh>(null!);
-  const cloudsRef = useRef<THREE.Mesh>(null!);
+function GlobeSafe() {
+  // Cargamos texturas con fallback para evitar excepciones si alguna falta
+  let albedo: THREE.Texture | undefined;
+  let normal: THREE.Texture | undefined;
+  let spec: THREE.Texture | undefined;
+  let clouds: THREE.Texture | undefined;
 
-  const [albedo, normal, spec, clouds] = useTexture([
-    '/textures/earth/earth_albedo.jpg',
-    '/textures/earth/earth_normal.jpg',
-    '/textures/earth/earth_spec.jpg',
-    '/textures/earth/earth_clouds.png',
-  ]);
-
-  // Asegurar color correcto y mejor filtrado
-  [albedo, clouds].forEach((t) => {
-    t.colorSpace = THREE.SRGBColorSpace;
-    t.anisotropy = 8;
-  });
-  [normal, spec].forEach((t) => (t.anisotropy = 8));
-
-  useFrame((_, delta) => {
-    if (earthRef.current) earthRef.current.rotation.y += delta * 0.02;
-    if (cloudsRef.current) cloudsRef.current.rotation.y += delta * 0.03;
-  });
+  try {
+    [albedo, normal, spec, clouds] = useTexture([
+      '/textures/earth/earth_albedo.jpg',
+      '/textures/earth/earth_normal.jpg',
+      '/textures/earth/earth_spec.jpg',
+      '/textures/earth/earth_clouds.png',
+    ]) as unknown as THREE.Texture[];
+  } catch {
+    // sin texturas: usamos materiales sólidos para no romper
+  }
 
   return (
-    <>
+    <group>
       {/* Tierra */}
-      <mesh ref={earthRef} rotation={[0.3, 0.6, 0]}>
-        <sphereGeometry args={[1.8, 96, 96]} />
-        <meshPhongMaterial
-          map={albedo}
-          normalMap={normal}
-          specularMap={spec}
-          shininess={12}
-        />
+      <mesh rotation={[0.3, 0.4, 0]}>
+        <sphereGeometry args={[1.6, 64, 64]} />
+        {albedo ? (
+          <meshStandardMaterial
+            map={albedo}
+            normalMap={normal}
+            metalnessMap={spec}
+            roughness={0.4}
+            metalness={0.2}
+          />
+        ) : (
+          <meshStandardMaterial color="#1f9cf0" roughness={0.3} metalness={0.5} />
+        )}
       </mesh>
 
-      {/* Nubes */}
-      <mesh ref={cloudsRef} rotation={[0.3, 0.6, 0]}>
-        <sphereGeometry args={[1.83, 96, 96]} />
-        <meshPhongMaterial
-          map={clouds}
-          transparent
-          opacity={0.45}
-          depthWrite={false}
-          side={DoubleSide}
-        />
-      </mesh>
-
-      {/* Atmósfera */}
-      <mesh>
-        <sphereGeometry args={[1.92, 96, 96]} />
-        <meshBasicMaterial
-          color={'#4cc9f0'}
-          transparent
-          opacity={0.15}
-          blending={AdditiveBlending}
-          side={THREE.BackSide}
-        />
-      </mesh>
-    </>
+      {/* Nubes (solo si existe la textura) */}
+      {clouds && (
+        <mesh rotation={[0.3, 0.4, 0]}>
+          <sphereGeometry args={[1.62, 64, 64]} />
+          <meshStandardMaterial map={clouds} transparent opacity={0.35} />
+        </mesh>
+      )}
+    </group>
   );
 }
 
 export default function Earth() {
   return (
-    <Canvas
-      dpr={[1, 2]}
-      camera={{ position: [0, 0, 6], fov: 45 }}
-      style={{ position: 'fixed', inset: 0, zIndex: -1 }}
-    >
-      {/* Fondo de estrellas */}
-      <Stars radius={120} depth={60} count={9000} factor={2.2} fade speed={0.6} />
-
-      {/* Luces */}
-      <ambientLight intensity={0.45} />
-      <directionalLight position={[4, 2, 2]} intensity={1.2} />
-      <pointLight position={[-4, -3, -2]} intensity={0.4} />
-
-      {/* Carga de texturas protegida por Suspense */}
-      <Suspense fallback={null}>
-        <RealEarth />
-      </Suspense>
-
-      {/* Interacción controlada */}
-      <OrbitControls enableZoom={false} enablePan={false} />
-    </Canvas>
+    <div style={{ position: 'absolute', inset: 0, zIndex: 0 }}>
+      <Canvas camera={{ position: [0, 0, 5], fov: 50 }}>
+        <ambientLight intensity={0.8} />
+        <directionalLight position={[5, 5, 5]} intensity={1.2} />
+        <Suspense fallback={null}>
+          <GlobeSafe />
+          <Stars radius={50} depth={40} count={5000} factor={4} />
+        </Suspense>
+        <OrbitControls enableZoom={false} enablePan={false} autoRotate autoRotateSpeed={0.6} />
+      </Canvas>
+    </div>
   );
 }
