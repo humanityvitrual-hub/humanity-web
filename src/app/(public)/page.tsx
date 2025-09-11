@@ -1,17 +1,14 @@
-import dynamic from "next/dynamic";
-
-const Earth = dynamic(() => import("@/components/Earth"), { ssr: false });
+import EarthClient from "@/components/EarthClient";
 
 export default function LandingPage() {
   return (
     <>
-      {/* fondo 3D */}
-      <Earth />
-      {/* glow suave */}
+      {/* fondo 3D cliente */}
+      <EarthClient />
+      {/* overlays */}
       <div aria-hidden className="hero-bg" />
       <div aria-hidden className="hero-grid" />
 
-      {/* navbar */}
       <header className="navbar">
         <div className="container inner">
           <a className="logo" href="/">Humanity</a>
@@ -23,7 +20,6 @@ export default function LandingPage() {
         </div>
       </header>
 
-      {/* hero sobre el 3D */}
       <main className="section center" style={{paddingTop:'7rem'}}>
         <div className="container" style={{backdropFilter:'blur(2px)'}}>
           <h1 style={{fontSize:'clamp(2.75rem,5vw,4rem)',margin:0,fontWeight:800,letterSpacing:'.3px'}}>
