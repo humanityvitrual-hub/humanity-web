@@ -2,11 +2,6 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Tokens mínimos */
-:root {
-  --brand: 255 115 179; /* ejemplo rosa/violáceo */
-}
-.bg-grid {
-  background-image: radial-gradient(#ffffff22 1px, transparent 1px);
-  background-size: 20px 20px;
-}
+html, body, #__next { height: 100%; }
+body { @apply bg-black text-white; }
+a { @apply underline; }
