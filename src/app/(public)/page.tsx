@@ -1,31 +1,45 @@
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
-import Button from "@/components/ui/Button";
 
 export default function LandingPage() {
   return (
     <>
       <Navbar />
-      <main className="relative isolate">
-        {/* Fondo sutil */}
-        <div className="absolute inset-0 -z-10 bg-grid" />
-        <section className="mx-auto flex min-h-[calc(100vh-3.5rem)] max-w-6xl flex-col items-center justify-center gap-8 px-4 text-center">
-          <h1 className="text-4xl font-bold tracking-tight md:text-6xl">
+
+      {/* Fondo decorativo */}
+      <div aria-hidden className="pointer-events-none fixed inset-0 -z-10">
+        <div className="absolute inset-0 bg-[radial-gradient(60%_60%_at_50%_10%,rgba(59,130,246,.25),transparent_70%)]" />
+        <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,.06)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.06)_1px,transparent_1px)] bg-[size:40px_40px]" />
+      </div>
+
+      <main className="mx-auto max-w-6xl px-4 pt-36 pb-16">
+        <section className="text-center">
+          <h1 className="text-5xl sm:text-6xl font-extrabold tracking-tight">
             Your Own World
           </h1>
-          <p className="max-w-2xl text-neutral-300">
-            Crea y explora tu propio mundo digital. Construimos la base
-            para experiencias personalizadas y escalables.
+          <p className="mt-5 text-lg sm:text-xl opacity-80 max-w-2xl mx-auto">
+            Crea y explora tu propio mundo digital. Construimos la base para experiencias
+            personalizadas y escalables.
           </p>
 
-          <div className="mt-2 flex items-center gap-4">
-            <Button asLink href="/auth/sign-in">Enter My World</Button>
-            <Button asLink href="/about" variant="ghost">
+          <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-4">
+            <a href="/my-world" className="px-6 py-3 rounded bg-white text-black font-medium">
+              Enter My World
+            </a>
+            <a href="/about" className="px-6 py-3 rounded border border-white/20 hover:bg-white/10">
               Learn More
-            </Button>
+            </a>
+          </div>
+
+          {/* Highlights */}
+          <div className="mt-12 grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm opacity-80">
+            <div className="rounded-lg border border-white/10 p-4">Tiendas 3D personalizadas</div>
+            <div className="rounded-lg border border-white/10 p-4">Entornos 360° y VR</div>
+            <div className="rounded-lg border border-white/10 p-4">Pagos (Stripe, test)</div>
           </div>
         </section>
       </main>
+
       <Footer />
     </>
   );
