@@ -1,21 +1,27 @@
 'use client';
-import { Canvas, useFrame, useLoader } from '@react-three/fiber';
-import { OrbitControls, Stars } from '@react-three/drei';
+import { Canvas, useFrame } from '@react-three/fiber';
+import { OrbitControls, Stars, useTexture } from '@react-three/drei';
 import * as THREE from 'three';
-import { TextureLoader, AdditiveBlending, DoubleSide } from 'three';
-import { useRef } from 'react';
+import { AdditiveBlending, DoubleSide } from 'three';
+import { Suspense, useRef } from 'react';
 
 function RealEarth() {
   const earthRef = useRef<THREE.Mesh>(null!);
   const cloudsRef = useRef<THREE.Mesh>(null!);
 
-  // Texturas servidas por nuestra app (carpeta /public)
-  const [albedo, normal, spec, clouds] = useLoader(TextureLoader, [
+  const [albedo, normal, spec, clouds] = useTexture([
     '/textures/earth/earth_albedo.jpg',
     '/textures/earth/earth_normal.jpg',
     '/textures/earth/earth_spec.jpg',
     '/textures/earth/earth_clouds.png',
   ]);
+
+  // Asegurar color correcto y mejor filtrado
+  [albedo, clouds].forEach((t) => {
+    t.colorSpace = THREE.SRGBColorSpace;
+    t.anisotropy = 8;
+  });
+  [normal, spec].forEach((t) => (t.anisotropy = 8));
 
   useFrame((_, delta) => {
     if (earthRef.current) earthRef.current.rotation.y += delta * 0.02;
@@ -24,6 +30,7 @@ function RealEarth() {
 
   return (
     <>
+      {/* Tierra */}
       <mesh ref={earthRef} rotation={[0.3, 0.6, 0]}>
         <sphereGeometry args={[1.8, 96, 96]} />
         <meshPhongMaterial
@@ -34,6 +41,7 @@ function RealEarth() {
         />
       </mesh>
 
+      {/* Nubes */}
       <mesh ref={cloudsRef} rotation={[0.3, 0.6, 0]}>
         <sphereGeometry args={[1.83, 96, 96]} />
         <meshPhongMaterial
@@ -45,7 +53,7 @@ function RealEarth() {
         />
       </mesh>
 
-      {/* Atmósfera (glow) */}
+      {/* Atmósfera */}
       <mesh>
         <sphereGeometry args={[1.92, 96, 96]} />
         <meshBasicMaterial
@@ -67,11 +75,20 @@ export default function Earth() {
       camera={{ position: [0, 0, 6], fov: 45 }}
       style={{ position: 'fixed', inset: 0, zIndex: -1 }}
     >
+      {/* Fondo de estrellas */}
       <Stars radius={120} depth={60} count={9000} factor={2.2} fade speed={0.6} />
-      <ambientLight intensity={0.4} />
+
+      {/* Luces */}
+      <ambientLight intensity={0.45} />
       <directionalLight position={[4, 2, 2]} intensity={1.2} />
       <pointLight position={[-4, -3, -2]} intensity={0.4} />
-      <RealEarth />
+
+      {/* Carga de texturas protegida por Suspense */}
+      <Suspense fallback={null}>
+        <RealEarth />
+      </Suspense>
+
+      {/* Interacción controlada */}
       <OrbitControls enableZoom={false} enablePan={false} />
     </Canvas>
   );
