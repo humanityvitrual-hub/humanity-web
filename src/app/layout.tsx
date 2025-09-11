@@ -1,14 +1,13 @@
-import type { Metadata } from "next";
-import "./globals.css";
+import "../styles/globals.css";
 
-export const metadata: Metadata = {
-  title: "Humanity — Your Own World",
-  description: "VR marketplace MVP",
+export const metadata = {
+  title: "Humanity",
+  description: "Your Own World",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="es">
+    <html lang="en">
       <body>{children}</body>
     </html>
   );
