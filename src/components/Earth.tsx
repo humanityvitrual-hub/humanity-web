@@ -1,89 +1,126 @@
 'use client';
-
-import { Canvas, useFrame } from '@react-three/fiber';
-import { Stars, OrbitControls, useTexture } from '@react-three/drei';
+import { Canvas } from '@react-three/fiber';
+import { OrbitControls, Stars } from '@react-three/drei';
 import * as THREE from 'three';
-import { useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
-function Globe() {
-  const earthRef = useRef<THREE.Mesh>(null!);
-  const cloudsRef = useRef<THREE.Mesh>(null!);
+type Tex = {
+  albedo: THREE.Texture | null;
+  normal: THREE.Texture | null;
+  spec: THREE.Texture | null;
+  lights: THREE.Texture | null;
+  clouds: THREE.Texture | null;
+};
 
-  const [
-    colorMap,         // base color
-    normalMap,        // normals
-    specularMap,      // specular
-    cloudsMap,        // clouds (png, transparent)
-    lightsMap         // city lights (emissive)
-  ] = useTexture([
-    '/textures/earth/earth_atmos_2048.jpg',
-    '/textures/earth/earth_normal_2048.jpg',
-    '/textures/earth/earth_specular_2048.jpg',
-    '/textures/earth/earth_clouds_2048.png',
-    '/textures/earth/earth_lights_2048.png',
-  ]) as unknown as [
-    THREE.Texture, THREE.Texture, THREE.Texture, THREE.Texture, THREE.Texture
-  ];
-
-  useFrame(({ clock }) => {
-    const t = clock.getElapsedTime();
-    if (earthRef.current) earthRef.current.rotation.y = t * 0.04;
-    if (cloudsRef.current) cloudsRef.current.rotation.y = t * 0.045;
+function useEarthTextures(): Tex {
+  const [tex, setTex] = useState<Tex>({
+    albedo: null, normal: null, spec: null, lights: null, clouds: null
   });
 
+  useEffect(() => {
+    let cancelled = false;
+    const loader = new THREE.TextureLoader();
+    const load = (url: string) =>
+      new Promise<THREE.Texture>((resolve, reject) => {
+        loader.load(url, t => resolve(t), undefined, err => reject(err));
+      });
+
+    (async () => {
+      try {
+        const [albedo, normal, spec, lights, clouds] = await Promise.all([
+          load('/textures/earth/earth_atmos_2048.jpg'),
+          load('/textures/earth/earth_normal_2048.jpg'),
+          load('/textures/earth/earth_specular_2048.jpg'),
+          load('/textures/earth/earth_lights_2048.png'),
+          load('/textures/earth/earth_clouds_2048.png'),
+        ]);
+
+        [albedo, normal, spec, lights, clouds].forEach(t => {
+          t.anisotropy = 8;
+        });
+
+        if (!cancelled) {
+          setTex({ albedo, normal, spec, lights, clouds });
+        }
+      } catch {
+        // Si alguna textura falla, al menos deja albedo para que no crashee
+        try {
+          const albedo = await load('/textures/earth/earth_atmos_2048.jpg');
+          albedo.anisotropy = 8;
+          if (!cancelled) setTex({ albedo, normal: null, spec: null, lights: null, clouds: null });
+        } catch {
+          if (!cancelled) setTex({ albedo: null, normal: null, spec: null, lights: null, clouds: null });
+        }
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, []);
+
+  return tex;
+}
+
+function Globe() {
+  const group = useRef<THREE.Group>(null);
+  const { albedo, normal, spec, lights, clouds } = useEarthTextures();
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      if (group.current) {
+        group.current.rotation.y += 0.0008;
+      }
+    }, 16);
+    return () => clearInterval(id);
+  }, []);
+
+  if (!albedo) return null;
+
   return (
-    <>
-      {/* Glow / Atmosphere */}
+    <group ref={group}>
+      {/* globo */}
       <mesh>
-        <sphereGeometry args={[1.03, 64, 64]} />
-        <meshBasicMaterial color="#3abefb" side={THREE.BackSide} transparent opacity={0.15} blending={THREE.AdditiveBlending} />
-      </mesh>
-
-      {/* Earth */}
-      <mesh ref={earthRef}>
-        <sphereGeometry args={[1, 128, 128]} />
+        <sphereGeometry args={[1.6, 128, 128]} />
         <meshPhongMaterial
-          map={colorMap}
-          normalMap={normalMap}
-          specularMap={specularMap}
+          map={albedo}
+          normalMap={normal ?? undefined}
+          specularMap={spec ?? undefined}
           shininess={8}
-          specular={new THREE.Color(0x222222)}
-          emissiveMap={lightsMap}
-          emissiveIntensity={0.65}
-          emissive={new THREE.Color(0x111111)}
         />
       </mesh>
 
-      {/* Clouds */}
-      <mesh ref={cloudsRef}>
-        <sphereGeometry args={[1.008, 64, 64]} />
-        <meshPhongMaterial
-          map={cloudsMap}
-          transparent
-          opacity={0.35}
-          depthWrite={false}
-        />
-      </mesh>
-    </>
+      {/* nubes */}
+      {clouds && (
+        <mesh>
+          <sphereGeometry args={[1.62, 96, 96]} />
+          <meshPhongMaterial
+            map={clouds}
+            transparent
+            opacity={0.9}
+            depthWrite={false}
+          />
+        </mesh>
+      )}
+
+      {/* brillo de ciudades (lights como emissive) */}
+      {lights && (
+        <mesh>
+          <sphereGeometry args={[1.605, 64, 64]} />
+          <meshBasicMaterial map={lights} blending={THREE.AdditiveBlending} transparent opacity={0.7} />
+        </mesh>
+      )}
+    </group>
   );
 }
 
 export default function Earth() {
   return (
-    <Canvas
-      camera={{ position: [0, 0, 2.6], fov: 45 }}
-      gl={{ antialias: true, alpha: true }}
-    >
-      {/* Iluminación */}
-      <ambientLight intensity={0.35} />
-      <directionalLight position={[5, 5, 5]} intensity={1.2} />
-      <directionalLight position={[-5, -3, -5]} intensity={0.4} />
-
-      {/* Fondo de estrellas */}
-      <Stars radius={100} depth={50} count={4000} factor={4} fade />
-
+    <Canvas camera={{ position: [0, 0, 4.2], fov: 50 }}>
+      <ambientLight intensity={0.9} />
+      <directionalLight position={[4, 4, 6]} intensity={1.2} />
+      <directionalLight position={[-6, -3, -5]} intensity={0.3} />
+      <Stars radius={100} depth={50} count={5000} factor={3} fade />
       <Globe />
-      <OrbitControls enablePan={false} enableZoom={false} autoRotate autoRotateSpeed={0.5} />
+      <OrbitControls enablePan={false} enableZoom={false} autoRotate={false} />
     </Canvas>
   );
 }
