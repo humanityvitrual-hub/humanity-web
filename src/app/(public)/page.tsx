@@ -1,125 +1,213 @@
 "use client";
 import dynamic from "next/dynamic";
-import Image from "next/image";
 import Link from "next/link";
 
-// Carga del globo SIN SSR
+// Fondo 3D
 const Earth = dynamic(() => import("@/components/Earth"), { ssr: false });
 
-export default function LandingPage() {
+export default function Landing() {
   return (
     <>
-      {/* NAV */}
-      <div className="nav">
-        <Link href="/" className="brand">HUMANITY</Link>
-        <div className="nav-right">
-          <Link href="/">Home</Link>
-          <Link href="/shop">Shop</Link>
-          <Link href="/about">About</Link>
-          <Link href="/auth/sign-in" className="btn">Sign in</Link>
+      {/* Header fijo */}
+      <div
+        style={{
+          position: "fixed",
+          inset: "0 0 auto 0",
+          zIndex: 30,
+          width: "100%",
+          height: 64,
+          backdropFilter: "blur(6px)",
+          WebkitBackdropFilter: "blur(6px)",
+        }}
+      >
+        <div
+          style={{
+            maxWidth: 1120,
+            margin: "0 auto",
+            padding: "14px 24px",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+          }}
+        >
+          <Link
+            href="/"
+            style={{
+              fontWeight: 700,
+              letterSpacing: ".14em",
+              fontSize: 14,
+              color: "#fff",
+              textDecoration: "none",
+            }}
+          >
+            HUMANITY
+          </Link>
+          <nav style={{ display: "flex", gap: 18, alignItems: "center" }}>
+            <Link href="/" style={{ color: "#fff", textDecoration: "none", opacity: 0.9 }}>
+              Home
+            </Link>
+            <Link href="/shop" style={{ color: "#fff", textDecoration: "none", opacity: 0.9 }}>
+              Shop
+            </Link>
+            <Link href="/about" style={{ color: "#fff", textDecoration: "none", opacity: 0.9 }}>
+              About
+            </Link>
+            <Link
+              href="/auth/sign-in"
+              style={{
+                background: "#fff",
+                color: "#000",
+                fontWeight: 600,
+                padding: "10px 16px",
+                borderRadius: 12,
+                textDecoration: "none",
+              }}
+            >
+              Sign in
+            </Link>
+          </nav>
         </div>
       </div>
 
-      {/* Fondo 3D */}
-      <div className="bg3d"><Earth /></div>
-      <div className="vignette" />
+      {/* Fondo 3D (ligero offset para que no tape el copy) */}
+      <div
+        style={{
+          position: "fixed",
+          inset: 0,
+          zIndex: 0,
+          transform: "translate(8vw, 4vh) scale(.92)",
+          transformOrigin: "center",
+          pointerEvents: "none",
+        }}
+      >
+        <Earth />
+      </div>
+      <div
+        style={{
+          position: "fixed",
+          inset: 0,
+          zIndex: 5,
+          pointerEvents: "none",
+          background:
+            "radial-gradient(ellipse at 35% 45%, rgba(0,0,0,0) 0%, rgba(0,0,0,.25) 55%, rgba(0,0,0,.85) 100%)",
+        }}
+      />
 
       {/* HERO */}
-      <main className="hero">
-        <div className="hero-left">
-          <h1 className="h1">Explore the World<br/>in 3D</h1>
-          <p className="p">A virtual reality e-commerce platform.</p>
-          <div className="cta">
-            <Link href="/my-world" className="btn">Get Started</Link>
-            <Link href="/about" className="btn ghost">Learn More</Link>
-          </div>
-          <p className="footer">© {new Date().getFullYear()} Humanity — Your Own World</p>
-        </div>
-
-        {/* Derecha: avatar (opcional). Coloca /public/images/assistant.jpg si quieres. */}
-        <div className="avatar">
-          <Image
-            src="/images/assistant.jpg"
-            alt="Assistant"
-            fill
-            sizes="360px"
-            className="avatar-img"
-            onErrorCapture={(e) => {
-              // Si no existe la imagen, mostramos placeholder
-              const el = e.currentTarget as HTMLImageElement;
-              el.style.display = 'none';
-              const ph = document.getElementById('ph-avatar');
-              if (ph) ph.style.display = 'block';
+      <main
+        style={{
+          position: "relative",
+          zIndex: 10,
+          maxWidth: 1120,
+          margin: "0 auto",
+          padding: "160px 24px 40px", // ↓ separa del header (móvil/tablet)
+          display: "grid",
+          gridTemplateColumns: "1fr",
+          gap: 32,
+          alignItems: "center",
+        }}
+      >
+        {/* Columna izquierda: copy */}
+        <section style={{ maxWidth: 640 }}>
+          <h1
+            style={{
+              margin: 0,
+              fontSize: 64,
+              lineHeight: 1.05,
+              fontWeight: 800,
+              letterSpacing: "-.02em",
+              textShadow: "0 6px 24px rgba(0,0,0,.45)",
             }}
-          />
-          <div id="ph-avatar" className="avatar-ph" />
-        </div>
+          >
+            Explore the World
+            <br />
+            in 3D
+          </h1>
+
+          <p
+            style={{
+              marginTop: 18,
+              opacity: 0.92,
+              fontSize: 18,
+              textShadow: "0 4px 16px rgba(0,0,0,.35)",
+            }}
+          >
+            A virtual reality e-commerce platform.
+          </p>
+
+          <div style={{ marginTop: 28, display: "flex", flexWrap: "wrap", gap: 12 }}>
+            <Link
+              href="/my-world"
+              style={{
+                display: "inline-block",
+                background: "#fff",
+                color: "#000",
+                fontWeight: 700,
+                padding: "14px 22px",
+                borderRadius: 14,
+                textDecoration: "none",
+                boxShadow: "0 8px 28px rgba(255,255,255,.12)",
+              }}
+            >
+              Get Started
+            </Link>
+            <Link
+              href="/about"
+              style={{
+                display: "inline-block",
+                border: "1px solid rgba(255,255,255,.25)",
+                color: "#fff",
+                padding: "14px 22px",
+                borderRadius: 14,
+                textDecoration: "none",
+                background: "rgba(255,255,255,.02)",
+              }}
+            >
+              Learn More
+            </Link>
+          </div>
+
+          <p style={{ marginTop: 40, fontSize: 12, opacity: 0.65 }}>
+            © {new Date().getFullYear()} Humanity — Your Own World
+          </p>
+        </section>
+
+        {/* Columna derecha: panel/avatar (solo desktop) */}
+        <aside className="panel">
+          <div className="panel-inner" />
+        </aside>
       </main>
 
-      {/* Estilos sin Tailwind: consistentes y “pixel perfect” */}
-      <style jsx global>{`
-        :root, html, body {
-          margin: 0; padding: 0;
-          background: #000; color: #fff;
-          font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
-        }
-        *, *::before, *::after { box-sizing: border-box; }
-        a { color: #fff; text-decoration: none; }
-        a:visited { color: #fff; }
-
-        .nav {
-          position: fixed; inset: 0 0 auto 0; z-index: 20;
-          display: flex; justify-content: space-between; align-items: center;
-          padding: 16px 24px; max-width: 1120px; margin: 0 auto; width: 100%;
-        }
-        .brand { font-weight: 700; letter-spacing: .14em; font-size: 14px; opacity: .95; }
-        .nav-right { display: flex; align-items: center; gap: 16px; }
-        .nav-right a { opacity: .85; }
-        .nav-right a:hover { opacity: 1; }
-
-        .btn {
-          background: #fff; color: #000; font-weight: 600;
-          padding: 10px 16px; border-radius: 12px;
-        }
-        .btn.ghost {
-          background: transparent; color: #fff;
-          border: 1px solid rgba(255,255,255,.2);
-        }
-        .btn:hover { filter: brightness(.95); }
-
-        .bg3d { position: fixed; inset: 0; z-index: 0; }
-        .vignette {
-          position: fixed; inset: 0; z-index: 5; pointer-events: none;
-          background: radial-gradient(ellipse at center,
-            rgba(0,0,0,0) 0%,
-            rgba(0,0,0,0.25) 55%,
-            rgba(0,0,0,0.85) 100%);
-        }
-
-        .hero {
-          position: relative; z-index: 10;
-          min-height: 100svh; padding: 96px 24px 24px;
-          max-width: 1120px; margin: 0 auto;
-          display: grid; grid-template-columns: 1fr; align-items: center; gap: 32px;
-        }
+      {/* estilos responsivos */}
+      <style jsx>{`
         @media (min-width: 1024px) {
-          .hero { grid-template-columns: 1fr 380px; }
+          main {
+            grid-template-columns: 1.1fr 0.9fr;
+            padding-top: 200px; /* más separación en desktop */
+          }
+          .panel {
+            display: block;
+          }
         }
-
-        .h1 { font-size: 56px; line-height: 1.05; font-weight: 700; letter-spacing: -0.02em; margin: 0; }
-        @media (min-width: 768px) { .h1 { font-size: 64px; } }
-        .p { margin: 16px 0 0 0; opacity: .85; font-size: 18px; }
-        .cta { margin-top: 28px; display: flex; flex-wrap: wrap; gap: 12px; }
-        .footer { margin-top: 40px; font-size: 12px; opacity: .6; }
-
-        .avatar { display: none; position: relative; height: 520px; width: 360px; margin-left: auto; }
-        .avatar-img { object-fit: cover; border-radius: 24px; border: 1px solid rgba(255,255,255,.1); }
-        .avatar-ph {
-          display: none; position: absolute; inset: 0; border-radius: 24px;
-          border: 1px solid rgba(255,255,255,.1);
-          background: radial-gradient(circle at 30% 30%, #444, #111);
+        .panel {
+          display: none; /* oculto en móvil */
         }
-        @media (min-width: 1024px) { .avatar { display: block; } }
+        .panel-inner {
+          height: 540px;
+          width: 420px;
+          margin-left: auto;
+          border-radius: 22px;
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          background: radial-gradient(
+              120% 120% at 50% 0%,
+              rgba(255, 255, 255, 0.06) 0%,
+              rgba(0, 0, 0, 0.35) 55%,
+              rgba(0, 0, 0, 0.82) 100%
+            ),
+            linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0) 50%);
+          box-shadow: 0 24px 80px rgba(0, 0, 0, 0.55), inset 0 0 120px rgba(255, 255, 255, 0.06);
+          overflow: hidden;
+        }
       `}</style>
     </>
   );
