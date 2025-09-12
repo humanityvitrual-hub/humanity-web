@@ -2,7 +2,6 @@
 @tailwind components;
 @tailwind utilities;
 
-html, body { background:#000; color:#fff; }
-* { box-sizing: border-box; }
-a { color: #fff; text-decoration: none; }
-a:visited { color: #fff; }
+/* Ajustes básicos para la landing */
+:root { color-scheme: dark; }
+html, body, #__next { height: 100%; }
