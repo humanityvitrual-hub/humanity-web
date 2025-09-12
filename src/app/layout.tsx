@@ -1,23 +1,20 @@
 import type { Metadata } from "next";
-import "./../styles/globals.css";
-import { Plus_Jakarta_Sans } from "next/font/google";
+import { Inter } from "next/font/google";
+import "./globals.css";
+import Header from "@/components/Header";
 
-const jakarta = Plus_Jakarta_Sans({
-  subsets: ["latin"],
-  weight: ["400","500","600","700"],
-  variable: "--font-sans",
-  display: "swap",
-});
+const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
   title: "Humanity — Your Own World",
-  description: "Create and explore your digital world. 3D stores, immersive spaces, and scalable experiences.",
+  description: "Build and explore your own immersive 3D world.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={jakarta.variable}>
-      <body className="font-sans antialiased bg-black text-neutral-200">
+    <html lang="en">
+      <body className={`${inter.className} bg-black text-white`}>
+        <Header />
         {children}
       </body>
     </html>
