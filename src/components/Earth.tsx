@@ -1,126 +1,73 @@
 'use client';
 import { Canvas } from '@react-three/fiber';
-import { OrbitControls, Stars } from '@react-three/drei';
+import { OrbitControls, Stars, useTexture } from '@react-three/drei';
 import * as THREE from 'three';
-import { useEffect, useRef, useState } from 'react';
-
-type Tex = {
-  albedo: THREE.Texture | null;
-  normal: THREE.Texture | null;
-  spec: THREE.Texture | null;
-  lights: THREE.Texture | null;
-  clouds: THREE.Texture | null;
-};
-
-function useEarthTextures(): Tex {
-  const [tex, setTex] = useState<Tex>({
-    albedo: null, normal: null, spec: null, lights: null, clouds: null
-  });
-
-  useEffect(() => {
-    let cancelled = false;
-    const loader = new THREE.TextureLoader();
-    const load = (url: string) =>
-      new Promise<THREE.Texture>((resolve, reject) => {
-        loader.load(url, t => resolve(t), undefined, err => reject(err));
-      });
-
-    (async () => {
-      try {
-        const [albedo, normal, spec, lights, clouds] = await Promise.all([
-          load('/textures/earth/earth_atmos_2048.jpg'),
-          load('/textures/earth/earth_normal_2048.jpg'),
-          load('/textures/earth/earth_specular_2048.jpg'),
-          load('/textures/earth/earth_lights_2048.png'),
-          load('/textures/earth/earth_clouds_2048.png'),
-        ]);
-
-        [albedo, normal, spec, lights, clouds].forEach(t => {
-          t.anisotropy = 8;
-        });
-
-        if (!cancelled) {
-          setTex({ albedo, normal, spec, lights, clouds });
-        }
-      } catch {
-        // Si alguna textura falla, al menos deja albedo para que no crashee
-        try {
-          const albedo = await load('/textures/earth/earth_atmos_2048.jpg');
-          albedo.anisotropy = 8;
-          if (!cancelled) setTex({ albedo, normal: null, spec: null, lights: null, clouds: null });
-        } catch {
-          if (!cancelled) setTex({ albedo: null, normal: null, spec: null, lights: null, clouds: null });
-        }
-      }
-    })();
-
-    return () => { cancelled = true; };
-  }, []);
-
-  return tex;
-}
 
 function Globe() {
-  const group = useRef<THREE.Group>(null);
-  const { albedo, normal, spec, lights, clouds } = useEarthTextures();
+  const [
+    albedo,
+    normal,
+    specular,
+    lights,
+    clouds
+  ] = useTexture([
+    '/textures/earth/earth_atmos_2048.jpg',
+    '/textures/earth/earth_normal_2048.jpg',
+    '/textures/earth/earth_specular_2048.jpg',
+    '/textures/earth/earth_lights_2048.png',
+    '/textures/earth/earth_clouds_1024.png'
+  ]) as THREE.Texture[];
 
-  useEffect(() => {
-    const id = setInterval(() => {
-      if (group.current) {
-        group.current.rotation.y += 0.0008;
-      }
-    }, 16);
-    return () => clearInterval(id);
-  }, []);
-
-  if (!albedo) return null;
+  // Correcciones de color/tiling
+  [albedo, lights, clouds].forEach(t => { if (t) t.colorSpace = THREE.SRGBColorSpace; });
+  [albedo, normal, specular, lights, clouds].forEach(t => {
+    if (!t) return;
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.repeat.set(1, 1);
+  });
 
   return (
-    <group ref={group}>
-      {/* globo */}
-      <mesh>
-        <sphereGeometry args={[1.6, 128, 128]} />
+    <group>
+      {/* Planeta */}
+      <mesh rotation={[0.25, 0.6, 0]}>
+        <sphereGeometry args={[1.7, 96, 96]} />
         <meshPhongMaterial
           map={albedo}
-          normalMap={normal ?? undefined}
-          specularMap={spec ?? undefined}
+          normalMap={normal}
+          specularMap={specular}
           shininess={8}
+          emissiveMap={lights}
+          emissiveIntensity={0.6}
+          emissive={new THREE.Color('white')}
         />
       </mesh>
 
-      {/* nubes */}
+      {/* Nubes (ligeramente más grandes) */}
       {clouds && (
-        <mesh>
-          <sphereGeometry args={[1.62, 96, 96]} />
-          <meshPhongMaterial
-            map={clouds}
-            transparent
-            opacity={0.9}
-            depthWrite={false}
-          />
+        <mesh rotation={[0.25, 0.6, 0]}>
+          <sphereGeometry args={[1.73, 96, 96]} />
+          <meshPhongMaterial map={clouds} transparent opacity={0.35} depthWrite={false}/>
         </mesh>
       )}
 
-      {/* brillo de ciudades (lights como emissive) */}
-      {lights && (
-        <mesh>
-          <sphereGeometry args={[1.605, 64, 64]} />
-          <meshBasicMaterial map={lights} blending={THREE.AdditiveBlending} transparent opacity={0.7} />
-        </mesh>
-      )}
+      {/* Sutil halo/atmósfera */}
+      <mesh>
+        <sphereGeometry args={[1.78, 64, 64]} />
+        <meshBasicMaterial color="#0ea5e9" transparent opacity={0.06}/>
+      </mesh>
     </group>
   );
 }
 
 export default function Earth() {
   return (
-    <Canvas camera={{ position: [0, 0, 4.2], fov: 50 }}>
-      <ambientLight intensity={0.9} />
-      <directionalLight position={[4, 4, 6]} intensity={1.2} />
-      <directionalLight position={[-6, -3, -5]} intensity={0.3} />
-      <Stars radius={100} depth={50} count={5000} factor={3} fade />
+    <Canvas camera={{ position: [0, 0, 5], fov: 50 }}>
+      <color attach="background" args={['#000']} />
+      <ambientLight intensity={0.6} />
+      <directionalLight position={[5, 5, 5]} intensity={1.2} />
       <Globe />
-      <OrbitControls enablePan={false} enableZoom={false} autoRotate={false} />
+      <Stars radius={100} depth={40} count={3000} factor={4} fade />
+      <OrbitControls autoRotate autoRotateSpeed={0.25} enablePan={false} enableZoom={false}/>
     </Canvas>
   );
 }
