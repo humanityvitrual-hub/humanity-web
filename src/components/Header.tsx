@@ -8,10 +8,19 @@ export default function Header() {
         <Link href="/" className="text-lg font-semibold tracking-wide text-white hover:opacity-90">
           Humanity
         </Link>
-        <nav className="flex items-center gap-6">
-          <Link href="/about" className="nav-link">About</Link>
-          <Link href="/auth/sign-in" className="nav-link">Sign in</Link>
-          <Link href="/auth/sign-up" className="btn-primary">Create account</Link>
+        <nav className="flex items-center gap-3 sm:gap-6">
+          <Link href="/about" className="text-sm text-white/80 hover:text-white transition">
+            About
+          </Link>
+          <Link href="/auth/sign-in" className="text-sm text-white/80 hover:text-white transition">
+            Sign in
+          </Link>
+          <Link
+            href="/auth/sign-up"
+            className="rounded-xl bg-white text-black px-4 py-2 text-sm font-medium hover:bg-white/90 transition"
+          >
+            Create account
+          </Link>
         </nav>
       </div>
     </header>
