@@ -1,89 +1,68 @@
 'use client';
-import { Suspense, useMemo, useRef } from 'react';
+
 import { Canvas, useFrame } from '@react-three/fiber';
-import { ContactShadows, Environment, Html, useGLTF, useAnimations, OrbitControls } from '@react-three/drei';
+import { Environment, ContactShadows, Html, useGLTF } from '@react-three/drei';
+import { Suspense, useRef } from 'react';
 import * as THREE from 'three';
 
-type AvatarProps = {
-  url?: string;           // por defecto /models/avatar.glb
-  autoRotate?: boolean;   // auto-rotación suave
-  animation?: string;     // nombre de la animación si el modelo trae
-  scale?: number;
+type Avatar3DProps = {
+  modelUrl?: string;   // p.ej. "/avatars/assistant.glb"
+  className?: string;
+  autoRotate?: boolean;
 };
 
-function AvatarModel({ url = '/models/avatar.glb', animation, scale = 1 }: AvatarProps) {
+function PlaceholderAvatar() {
   const group = useRef<THREE.Group>(null);
-  const { scene, animations } = useGLTF(url);
-  const { actions } = useAnimations(animations, group);
-
-  useMemo(() => {
-    scene.traverse((obj: any) => {
-      if (obj.isMesh) {
-        obj.castShadow = true;
-        obj.receiveShadow = true;
-        if (obj.material && obj.material.metalness !== undefined) {
-          obj.material.metalness = Math.min(0.2, obj.material.metalness ?? 0.2);
-          obj.material.roughness = Math.max(0.4, obj.material.roughness ?? 0.4);
-        }
-      }
-    });
-  }, [scene]);
-
-  // Tocar animación si existe
-  if (animation && actions && actions[animation]) {
-    actions[animation]?.reset().fadeIn(0.5).play();
-  } else if (animations && animations.length > 0) {
-    // si no pasan nombre, toma la primera
-    actions[animations[0].name]?.reset().fadeIn(0.5).play();
-  }
-
-  return <primitive ref={group} object={scene} scale={scale} position={[0, -1.2, 0]} />;
-}
-
-function AvatarStage({ url, autoRotate = true, animation }: AvatarProps) {
-  const root = useRef<THREE.Group>(null);
-
-  useFrame((_, delta) => {
-    if (autoRotate && root.current) {
-      root.current.rotation.y += delta * 0.3; // giro muy sutil
-    }
+  useFrame(({ clock }) => {
+    const t = clock.getElapsedTime();
+    if (group.current) group.current.position.y = 0.02 * Math.sin(t * 1.5);
   });
-
   return (
-    <group ref={root}>
-      {/* Avatar */}
-      <AvatarModel url={url} animation={animation} scale={1.2} />
-      {/* Sombras de contacto para “pegarlo” al plano */}
-      <ContactShadows
-        position={[0, -1.2, 0]}
-        opacity={0.35}
-        scale={6}
-        blur={2.5}
-        far={3.5}
-      />
-      {/* Ambiente de estudio limpio */}
-      <Environment preset="studio" />
+    <group ref={group} position={[0, -0.9, 0]} scale={1.1}>
+      {/* cabeza */}
+      <mesh castShadow receiveShadow>
+        <sphereGeometry args={[0.6, 48, 48]} />
+        <meshStandardMaterial roughness={0.4} metalness={0.1} color="#c9a27e" />
+      </mesh>
+      {/* torso (simple) */}
+      <mesh position={[0, -0.95, 0]} castShadow receiveShadow>
+        <boxGeometry args={[0.9, 1.2, 0.5]} />
+        <meshStandardMaterial roughness={0.8} metalness={0.05} color="#2b2b2b" />
+      </mesh>
     </group>
   );
 }
 
-export default function Avatar3D() {
+function AvatarGLTF({ url }: { url: string }) {
+  const group = useRef<THREE.Group>(null);
+  const gltf = useGLTF(url) as any;
+  useFrame(({ clock }) => {
+    const t = clock.getElapsedTime();
+    if (group.current) group.current.position.y = 0.02 * Math.sin(t * 1.5);
+  });
   return (
-    <Canvas
-      camera={{ position: [0, 1.2, 3.2], fov: 35 }}
-      gl={{ antialias: true, alpha: true }}
-      shadows="soft"
-    >
-      <color attach="background" args={['transparent']} />
-      <hemisphereLight intensity={0.7} groundColor={'#0b1c2e'} />
-      <directionalLight position={[4, 6, 3]} intensity={1.3} castShadow shadow-mapSize={[1024,1024]} />
-      <Suspense fallback={<Html center style={{color:'#fff', fontSize:14, opacity:.8}}>Loading avatar…</Html>}>
-        <AvatarStage />
-      </Suspense>
-      <OrbitControls enableZoom={false} enablePan={false} minPolarAngle={Math.PI/3.5} maxPolarAngle={Math.PI/1.7}/>
-    </Canvas>
+    <group ref={group} position={[0, -0.9, 0]} rotation={[0, Math.PI * 0.05, 0]} scale={1.1}>
+      <primitive object={gltf.scene} />
+    </group>
   );
 }
 
-// Precarga opcional
-useGLTF.preload('/models/avatar.glb');
+export default function Avatar3D({ modelUrl, className, autoRotate = false }: Avatar3DProps) {
+  return (
+    <div
+      className={`relative rounded-3xl border border-white/10 bg-white/5 backdrop-blur-sm shadow-2xl ${className ?? ''}`}
+      style={{ aspectRatio: '3 / 4' }}
+    >
+      <div className="pointer-events-none absolute inset-0 rounded-3xl ring-1 ring-white/10" />
+      <Canvas dpr={[1, 2]} shadows gl={{ antialias: true, physicallyCorrectLights: true }} camera={{ position: [0, 1.1, 2.2], fov: 35 }}>
+        <hemisphereLight intensity={0.45} color="#ffffff" groundColor="#0b1020" />
+        <directionalLight position={[2.5, 3, 2]} intensity={2.0} castShadow shadow-mapSize={1024} />
+        <Environment preset="city" />
+        <Suspense fallback={<Html center className="text-sm text-white/80">Loading…</Html>}>
+          {modelUrl ? <AvatarGLTF url={modelUrl} /> : <PlaceholderAvatar />}
+        </Suspense>
+        <ContactShadows position={[0, -1.15, 0]} opacity={0.35} scale={5} blur={2.6} far={2.5} />
+      </Canvas>
+    </div>
+  );
+}
