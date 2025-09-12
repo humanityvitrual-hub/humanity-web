@@ -13,33 +13,33 @@ function Globe() {
     '/textures/earth/earth_clouds_1024.png'
   ]) as THREE.Texture[];
 
-  [albedo, lights, clouds].forEach(t => { if (t) t.colorSpace = THREE.SRGBColorSpace; });
+  [albedo, lights, clouds].forEach(t => { if (t) (t as any).colorSpace = THREE.SRGBColorSpace; });
 
   return (
     <group>
-      <mesh rotation={[0.25, 0.6, 0]}>
-        <sphereGeometry args={[1.7, 96, 96]} />
+      <mesh rotation={[0.22, 0.62, 0]}>
+        <sphereGeometry args={[1.95, 160, 160]} />
         <meshPhongMaterial
           map={albedo}
           normalMap={normal}
           specularMap={specular}
-          shininess={12}
+          shininess={20}
           emissiveMap={lights}
-          emissiveIntensity={0.9}
+          emissiveIntensity={1.1}
           emissive={new THREE.Color('#ffffff')}
         />
       </mesh>
 
       {clouds && (
-        <mesh rotation={[0.25, 0.6, 0]}>
-          <sphereGeometry args={[1.73, 96, 96]} />
-          <meshPhongMaterial map={clouds} transparent opacity={0.5} depthWrite={false}/>
+        <mesh rotation={[0.22, 0.62, 0]}>
+          <sphereGeometry args={[2.0, 160, 160]} />
+          <meshPhongMaterial map={clouds} transparent opacity={0.48} depthWrite={false}/>
         </mesh>
       )}
 
       <mesh>
-        <sphereGeometry args={[1.78, 64, 64]} />
-        <meshBasicMaterial color="#38bdf8" transparent opacity={0.08}/>
+        <sphereGeometry args={[2.06, 64, 64]} />
+        <meshBasicMaterial color="#66c8ff" transparent opacity={0.07}/>
       </mesh>
     </group>
   );
@@ -48,20 +48,20 @@ function Globe() {
 export default function Earth() {
   return (
     <Canvas
-      className="h-full w-full"
       camera={{ position: [0, 0, 5], fov: 50 }}
       gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping, outputColorSpace: THREE.SRGBColorSpace }}
+      style={{ width:"100%", height:"100%" }}
     >
       <color attach="background" args={['#000']} />
-      <ambientLight intensity={0.85} />
-      <directionalLight position={[5, 4, 5]} intensity={1.6} color="#ffffff" />
-      <directionalLight position={[-4, -3, -5]} intensity={0.4} color="#88aaff" />
+      <ambientLight intensity={1.0} />
+      <directionalLight position={[6, 4, 6]} intensity={1.9} color="#fff" />
+      <directionalLight position={[-5, -3, -6]} intensity={0.6} color="#9fbaff" />
       <Globe />
-      <Stars radius={120} depth={40} count={2000} factor={3} fade />
+      <Stars radius={150} depth={40} count={1600} factor={3} fade />
       <EffectComposer>
-        <Bloom intensity={0.5} luminanceThreshold={0.2} luminanceSmoothing={0.1} />
+        <Bloom intensity={0.62} luminanceThreshold={0.22} luminanceSmoothing={0.12} />
       </EffectComposer>
-      <OrbitControls autoRotate autoRotateSpeed={0.25} enablePan={false} enableZoom={false}/>
+      <OrbitControls autoRotate autoRotateSpeed={0.2} enablePan={false} enableZoom={false}/>
     </Canvas>
   );
 }
