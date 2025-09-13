@@ -2,6 +2,6 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Ajustes básicos para la landing */
 :root { color-scheme: dark; }
-html, body { height: 100%; }
-body { background:#000; color:#fff; }
+html, body, #__next { height: 100%; }
