@@ -1,4 +1,5 @@
 'use client';
+import AvatarAssistant from "@components/AvatarAssistant";
 
 import Header from '@/components/Header';
 import AvatarHost from '@/components/AvatarHost';
@@ -23,11 +24,12 @@ export default function Landing() {
         {/* Columna izquierda: texto y CTAs */}
         <div className="flex flex-col items-center text-center md:items-start md:text-left">
           <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold leading-tight tracking-tight">
-            Explore the World in 3D
+            Humanity
           </h1>
           <p className="mt-4 text-lg text-zinc-300 max-w-xl">
-            A virtual reality e-commerce platform.
+            Your Own World
           </p>
+    <AvatarAssistant />
 
           <div className="mt-6 flex gap-4">
             <button className="px-5 py-3 rounded-lg bg-white text-black font-semibold">
