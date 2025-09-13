@@ -1,5 +1,5 @@
-import AvatarAssistant from "@components/AvatarAssistant";
 'use client';
+import AvatarAssistant from "@components/AvatarAssistant";
 
 import AvatarHost from '@/components/AvatarHost';
 
