@@ -2,6 +2,13 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Ajustes básicos para la landing */
 :root { color-scheme: dark; }
-html, body, #__next { height: 100%; }
+html, body { height: 100%; }
+body { background: #000; color: #fff; }
+
+/* que cualquier canvas/WebGL ocupe el contenedor */
+canvas { display:block; }
+
+/* utilidades opcionales para full-bleed */
+.full-bleed { position: absolute; inset: 0; }
+.z-behind { z-index: -1; }
