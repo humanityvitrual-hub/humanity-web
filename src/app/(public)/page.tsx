@@ -2,6 +2,7 @@
 import dynamic from "next/dynamic";
 import Link from "next/link";
 
+// Fondo 3D
 const Earth = dynamic(() => import("@/components/Earth"), { ssr: false });
 
 export default function Landing() {
@@ -68,20 +69,19 @@ export default function Landing() {
         </div>
       </div>
 
-      {/* Fondo 3D con ligero offset */}
+      {/* Fondo 3D (ligero offset para que no tape el copy) */}
       <div
         style={{
           position: "fixed",
           inset: 0,
           zIndex: 0,
-          transform: "translate(10vw, 6vh) scale(.9)",
+          transform: "translate(8vw, 4vh) scale(.92)",
           transformOrigin: "center",
           pointerEvents: "none",
         }}
       >
         <Earth />
       </div>
-      {/* Vignette/overlay para legibilidad */}
       <div
         style={{
           position: "fixed",
@@ -100,14 +100,14 @@ export default function Landing() {
           zIndex: 10,
           maxWidth: 1120,
           margin: "0 auto",
-          padding: "220px 24px 48px", /* <-- SIEMPRE padding alto */
+          padding: "160px 24px 40px", // ↓ separa del header (móvil/tablet)
           display: "grid",
-          gridTemplateColumns: "1.1fr 0.9fr",
+          gridTemplateColumns: "1fr",
           gap: 32,
           alignItems: "center",
         }}
       >
-        {/* Columna izquierda */}
+        {/* Columna izquierda: copy */}
         <section style={{ maxWidth: 640 }}>
           <h1
             style={{
@@ -136,36 +136,31 @@ export default function Landing() {
           </p>
 
           <div style={{ marginTop: 28, display: "flex", flexWrap: "wrap", gap: 12 }}>
-            {/* primario: blanco con texto negro visible */}
             <Link
               href="/my-world"
               style={{
                 display: "inline-block",
-                background: "#ffffff",
-                color: "#111111",
-                fontWeight: 800,
+                background: "#fff",
+                color: "#000",
+                fontWeight: 700,
                 padding: "14px 22px",
                 borderRadius: 14,
                 textDecoration: "none",
-                boxShadow: "0 8px 28px rgba(255,255,255,.16)",
-                letterSpacing: ".02em",
+                boxShadow: "0 8px 28px rgba(255,255,255,.12)",
               }}
             >
               Get Started
             </Link>
-            {/* secundario: borde + texto blanco */}
             <Link
               href="/about"
               style={{
                 display: "inline-block",
-                border: "1px solid rgba(255,255,255,.28)",
-                color: "#ffffff",
+                border: "1px solid rgba(255,255,255,.25)",
+                color: "#fff",
                 padding: "14px 22px",
                 borderRadius: 14,
                 textDecoration: "none",
-                background: "rgba(255,255,255,0.03)",
-                fontWeight: 700,
-                letterSpacing: ".02em",
+                background: "rgba(255,255,255,.02)",
               }}
             >
               Learn More
@@ -177,45 +172,43 @@ export default function Landing() {
           </p>
         </section>
 
-        {/* Columna derecha: AVATAR SIEMPRE visible */}
-        <aside style={{ display: "block" }}>
-          <div
-            style={{
-              position: "relative",
-              height: 540,
-              width: 420,
-              marginLeft: "auto",
-              borderRadius: 22,
-              border: "1px solid rgba(255,255,255,0.1)",
-              background:
-                "radial-gradient(120% 120% at 50% 0%, rgba(255,255,255,.06) 0%, rgba(0,0,0,.35) 55%, rgba(0,0,0,.82) 100%), linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,0) 50%)",
-              boxShadow: "0 24px 80px rgba(0,0,0,.55), inset 0 0 120px rgba(255,255,255,.06)",
-              overflow: "hidden",
-            }}
-          >
-            <img
-              src="https://images.unsplash.com/photo-1531123897727-8f129e1688ce?q=80&w=1080&auto=format&fit=crop"
-              alt="Avatar"
-              style={{
-                position: "absolute",
-                inset: 0,
-                width: "100%",
-                height: "100%",
-                objectFit: "cover",
-                filter: "contrast(1.05) saturate(1.05)",
-              }}
-            />
-            <div
-              style={{
-                position: "absolute",
-                inset: 0,
-                background:
-                  "linear-gradient(180deg, rgba(0,0,0,.0) 0%, rgba(0,0,0,.25) 65%, rgba(0,0,0,.45) 100%)",
-              }}
-            />
-          </div>
+        {/* Columna derecha: panel/avatar (solo desktop) */}
+        <aside className="panel">
+          <div className="panel-inner" />
         </aside>
       </main>
+
+      {/* estilos responsivos */}
+      <style jsx>{`
+        @media (min-width: 1024px) {
+          main {
+            grid-template-columns: 1.1fr 0.9fr;
+            padding-top: 200px; /* más separación en desktop */
+          }
+          .panel {
+            display: block;
+          }
+        }
+        .panel {
+          display: none; /* oculto en móvil */
+        }
+        .panel-inner {
+          height: 540px;
+          width: 420px;
+          margin-left: auto;
+          border-radius: 22px;
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          background: radial-gradient(
+              120% 120% at 50% 0%,
+              rgba(255, 255, 255, 0.06) 0%,
+              rgba(0, 0, 0, 0.35) 55%,
+              rgba(0, 0, 0, 0.82) 100%
+            ),
+            linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0) 50%);
+          box-shadow: 0 24px 80px rgba(0, 0, 0, 0.55), inset 0 0 120px rgba(255, 255, 255, 0.06);
+          overflow: hidden;
+        }
+      `}</style>
     </>
   );
 }
