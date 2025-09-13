@@ -1,25 +1,19 @@
-"use client";
-import Link from "next/link";
+'use client';
 
 export default function Header() {
   return (
-    <header className="fixed top-0 left-0 right-0 z-20">
-      <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
-        <Link href="/" className="text-lg font-semibold tracking-wide text-white hover:opacity-90">
-          HUMANITY
-        </Link>
-        <nav className="flex items-center gap-4 sm:gap-6">
-          <Link href="/" className="text-sm text-white/85 hover:text-white transition">Home</Link>
-          <Link href="/shop" className="text-sm text-white/85 hover:text-white transition">Shop</Link>
-          <Link href="/about" className="text-sm text-white/85 hover:text-white transition">About</Link>
-          <Link
-            href="/auth/sign-in"
-            className="rounded-xl bg-white/95 text-black px-4 py-2 text-sm font-medium hover:bg-white transition"
-          >
-            Sign in
-          </Link>
-        </nav>
-      </div>
+    <header className="fixed inset-x-0 top-0 z-30 bg-black/30 backdrop-blur-sm">
+      <nav className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
+        <div className="text-sm tracking-[0.35em] font-semibold">HUMANITY</div>
+        <ul className="hidden md:flex items-center gap-8 text-sm text-zinc-300">
+          <li><a className="hover:text-white transition" href="#">Home</a></li>
+          <li><a className="hover:text-white transition" href="#">Shop</a></li>
+          <li><a className="hover:text-white transition" href="#">About</a></li>
+        </ul>
+        <button className="rounded-full bg-white px-4 py-1.5 text-black text-sm font-semibold hover:opacity-90 transition">
+          Sign in
+        </button>
+      </nav>
     </header>
   );
 }
