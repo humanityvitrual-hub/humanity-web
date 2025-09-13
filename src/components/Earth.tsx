@@ -1,7 +1,6 @@
 'use client';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls, Stars, useTexture } from '@react-three/drei';
-import { EffectComposer, Bloom } from '@react-three/postprocessing';
 import * as THREE from 'three';
 
 function Globe() {
@@ -10,15 +9,22 @@ function Globe() {
     '/textures/earth/earth_normal_2048.jpg',
     '/textures/earth/earth_specular_2048.jpg',
     '/textures/earth/earth_lights_2048.png',
-    '/textures/earth/earth_clouds_1024.png'
+    '/textures/earth/earth_clouds_1024.png',
   ]) as THREE.Texture[];
 
-  [albedo, lights, clouds].forEach(t => { if (t) t.colorSpace = THREE.SRGBColorSpace; });
+  // espacios de color y wrapping
+  [albedo, lights, clouds].forEach((t) => t && (t.colorSpace = THREE.SRGBColorSpace));
+  [albedo, normal, specular, lights, clouds].forEach((t) => {
+    if (!t) return;
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.repeat.set(1, 1);
+  });
 
   return (
-    <group>
-      <mesh rotation={[0.25, 0.6, 0]}>
-        <sphereGeometry args={[1.7, 96, 96]} />
+    <group rotation={[0.18, 0.5, 0]}>
+      {/* planeta base */}
+      <mesh>
+        <sphereGeometry args={[1.75, 96, 96]} />
         <meshPhongMaterial
           map={albedo}
           normalMap={normal}
@@ -26,20 +32,33 @@ function Globe() {
           shininess={12}
           emissiveMap={lights}
           emissiveIntensity={0.9}
-          emissive={new THREE.Color('#ffffff')}
+          emissive={new THREE.Color('#3b82f6')} // da más “vida” al nocturno
         />
       </mesh>
 
+      {/* capa de nubes */}
       {clouds && (
-        <mesh rotation={[0.25, 0.6, 0]}>
-          <sphereGeometry args={[1.73, 96, 96]} />
-          <meshPhongMaterial map={clouds} transparent opacity={0.5} depthWrite={false}/>
+        <mesh>
+          <sphereGeometry args={[1.78, 96, 96]} />
+          <meshPhongMaterial
+            map={clouds}
+            transparent
+            opacity={0.36}
+            depthWrite={false}
+          />
         </mesh>
       )}
 
+      {/* atmósfera (halo suave) */}
       <mesh>
-        <sphereGeometry args={[1.78, 64, 64]} />
-        <meshBasicMaterial color="#38bdf8" transparent opacity={0.08}/>
+        <sphereGeometry args={[1.84, 64, 64]} />
+        <meshBasicMaterial
+          color={'#60a5fa'}
+          transparent
+          opacity={0.08}
+          blending={THREE.AdditiveBlending}
+          depthWrite={false}
+        />
       </mesh>
     </group>
   );
@@ -47,21 +66,20 @@ function Globe() {
 
 export default function Earth() {
   return (
-    <Canvas
-      className="h-full w-full"
-      camera={{ position: [0, 0, 5], fov: 50 }}
-      gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping, outputColorSpace: THREE.SRGBColorSpace }}
-    >
+    <Canvas camera={{ position: [0, 0, 5.2], fov: 50 }}>
       <color attach="background" args={['#000']} />
+      {/* iluminación más viva */}
       <ambientLight intensity={0.85} />
-      <directionalLight position={[5, 4, 5]} intensity={1.6} color="#ffffff" />
-      <directionalLight position={[-4, -3, -5]} intensity={0.4} color="#88aaff" />
+      <directionalLight position={[5, 5, 5]} intensity={1.4} />
+      <directionalLight position={[-6, -3, -2]} intensity={0.5} />
       <Globe />
-      <Stars radius={120} depth={40} count={2000} factor={3} fade />
-      <EffectComposer>
-        <Bloom intensity={0.5} luminanceThreshold={0.2} luminanceSmoothing={0.1} />
-      </EffectComposer>
-      <OrbitControls autoRotate autoRotateSpeed={0.25} enablePan={false} enableZoom={false}/>
+      <Stars radius={120} depth={60} count={4500} factor={4} fade />
+      <OrbitControls
+        autoRotate
+        autoRotateSpeed={0.35}
+        enablePan={false}
+        enableZoom={false}
+      />
     </Canvas>
   );
 }
