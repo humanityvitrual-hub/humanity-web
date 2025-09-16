@@ -2,28 +2,12 @@
 
 import { Canvas, useFrame } from '@react-three/fiber';
 import { Stars, useTexture } from '@react-three/drei';
-import { Suspense, useRef, useMemo, useState, useEffect } from 'react';
+import { Suspense, useRef, useMemo } from 'react';
 import * as THREE from 'three';
 
-function TexturedEarth({
-  scale = 1.15,
-  speed = 0.08,
-  cloudsSpeed = 0.03,
-  onHoverChange,
-}: {
-  scale?: number;
-  speed?: number;
-  cloudsSpeed?: number;
-  onHoverChange?: (v: boolean) => void;
-}) {
+function TexturedEarth({ scale = 1.15 }: { scale?: number }) {
   const groupRef = useRef<THREE.Group>(null!);
   const cloudsRef = useRef<THREE.Mesh>(null!);
-
-  // refs para evitar problemas de closures en useFrame
-  const speedRef = useRef(speed);
-  const cloudsSpeedRef = useRef(cloudsSpeed);
-  useEffect(() => { speedRef.current = speed; }, [speed]);
-  useEffect(() => { cloudsSpeedRef.current = cloudsSpeed; }, [cloudsSpeed]);
 
   const [colorMap, normalMap, specularMap, cloudsMap, lightsMap] = useTexture([
     '/textures/earth/earth_atmos_2048.jpg',
@@ -42,20 +26,15 @@ function TexturedEarth({
 
   const sphereGeo = useMemo(() => new THREE.SphereGeometry(1, 128, 128), []);
 
+  // Rotación constante (sin hover)
   useFrame((_, dt) => {
-    if (groupRef.current) groupRef.current.rotation.y += dt * speedRef.current;
-    if (cloudsRef.current) cloudsRef.current.rotation.y += dt * cloudsSpeedRef.current;
+    if (groupRef.current) groupRef.current.rotation.y += dt * 0.12;
+    if (cloudsRef.current) cloudsRef.current.rotation.y += dt * 0.03;
   });
 
   return (
-    // ← Los eventos de puntero se capturan en el grupo del planeta
-    <group
-      ref={groupRef}
-      scale={scale}
-      onPointerOver={() => onHoverChange?.(true)}
-      onPointerOut={() => onHoverChange?.(false)}
-    >
-      {/* Superficie (día) */}
+    <group ref={groupRef} scale={scale}>
+      {/* Superficie (día) con normal + specular */}
       <mesh geometry={sphereGeo}>
         <meshPhongMaterial
           map={colorMap}
@@ -77,17 +56,17 @@ function TexturedEarth({
         />
       </mesh>
 
-      {/* Luces nocturnas leves */}
+      {/* Luces nocturnas sutiles (look de día) */}
       <mesh geometry={sphereGeo}>
         <meshBasicMaterial
           map={lightsMap}
           transparent
-          opacity={0.18}
+          opacity={0.2}
           blending={THREE.AdditiveBlending}
         />
       </mesh>
 
-      {/* Halo atmosférico */}
+      {/* Halo/atmósfera */}
       <mesh geometry={sphereGeo} scale={1.03}>
         <meshPhysicalMaterial
           color="#66c2ff"
@@ -105,8 +84,8 @@ function MovingStars() {
   const ref = useRef<THREE.Group>(null!);
   useFrame((_, dt) => {
     if (ref.current) {
-      ref.current.rotation.y += dt * 0.03;
-      ref.current.rotation.x += dt * 0.006;
+      ref.current.rotation.y += dt * 0.02;
+      ref.current.rotation.x += dt * 0.004;
     }
   });
   return (
@@ -117,40 +96,31 @@ function MovingStars() {
 }
 
 export default function Earth() {
-  const [hover, setHover] = useState(false);
-
-  const earthSpeed = hover ? 0.22 : 0.08;   // ↑ ajustable
-  const cloudsSpeed = hover ? 0.06 : 0.03;
-
   return (
-    <div className="absolute inset-0">
+    // Sin interacción y sin bloquear clics del texto
+    <div className="pointer-events-none absolute inset-0">
       <Canvas
         dpr={[1, 2]}
-        camera={{ position: [0, 0, 4.2], fov: 58 }}
+        camera={{ position: [0, 0, 4.2], fov: 58 }}   // más lejos => más pequeña
         style={{ background: 'transparent' }}
         gl={{
           toneMapping: THREE.ACESFilmicToneMapping,
-          toneMappingExposure: 1.85,
+          toneMappingExposure: 1.9,                  // más vivo/brillante
           outputColorSpace: THREE.SRGBColorSpace,
           physicallyCorrectLights: true,
         }}
       >
-        {/* Iluminación de día */}
-        <ambientLight intensity={0.9} />
-        <hemisphereLight skyColor={'#cfe0ff'} groundColor={'#0a0c10'} intensity={0.5} />
+        {/* Iluminación tipo día (sol cálido + rim frío) */}
+        <ambientLight intensity={0.95} />
+        <hemisphereLight skyColor={'#cfe0ff'} groundColor={'#0a0c10'} intensity={0.55} />
         <directionalLight color={'#ffe9bf'} position={[5, 3, 2]} intensity={1.7} />
         <directionalLight color={'#76c3ff'} position={[-4, 1, -2]} intensity={1.0} />
         <directionalLight position={[-2, -1, 1]} intensity={0.35} />
 
         <Suspense fallback={null}>
-          {/* El planeta está a la derecha, dejando aire al texto */}
+          {/* A la derecha, dejando aire al texto */}
           <group position={[0.65, 0.02, 0]}>
-            <TexturedEarth
-              scale={1.15}
-              speed={earthSpeed}
-              cloudsSpeed={cloudsSpeed}
-              onHoverChange={setHover}
-            />
+            <TexturedEarth />
           </group>
           <MovingStars />
         </Suspense>
