@@ -1,50 +1,52 @@
 'use client';
 
 import { Canvas, useFrame } from '@react-three/fiber';
-import { OrbitControls, Stars, useTexture } from '@react-three/drei';
+import { Stars, useTexture } from '@react-three/drei';
 import { Suspense, useRef, useMemo } from 'react';
 import * as THREE from 'three';
 
 function TexturedEarth({ scale = 1.45 }: { scale?: number }) {
-  const ref = useRef<THREE.Group>(null!);
+  const groupRef = useRef<THREE.Group>(null!);
+  const cloudsRef = useRef<THREE.Mesh>(null!);
 
-  // Cargamos texturas
+  // Texturas (día, normal, specular, nubes, luces nocturnas)
   const [colorMap, normalMap, specularMap, cloudsMap, lightsMap] = useTexture([
-    '/textures/earth/earth_atmos_2048.jpg',   // mapa de color (día)
-    '/textures/earth/earth_normal_2048.jpg',  // normal
-    '/textures/earth/earth_specular_2048.jpg',// specular
-    '/textures/earth/earth_clouds_1024.png',  // nubes (alpha)
-    '/textures/earth/earth_lights_2048.png',  // luces nocturnas
+    '/textures/earth/earth_atmos_2048.jpg',
+    '/textures/earth/earth_normal_2048.jpg',
+    '/textures/earth/earth_specular_2048.jpg',
+    '/textures/earth/earth_clouds_1024.png',
+    '/textures/earth/earth_lights_2048.png',
   ]);
 
-  // Ajustes recomendados
+  // Ajustes de calidad
   [colorMap, normalMap, specularMap, cloudsMap, lightsMap].forEach(t => {
-    if (!t) return;
-    if ('colorSpace' in t) (t as any).colorSpace = THREE.SRGBColorSpace;
-    t.anisotropy = 8;
-  });
-
-  // Rotación suave del grupo
-  useFrame((_, dt) => {
-    if (ref.current) ref.current.rotation.y += dt * 0.08;
+    // @ts-ignore - compatibilidad tres r15+
+    if (t && 'colorSpace' in t) t.colorSpace = THREE.SRGBColorSpace;
+    if (t) t.anisotropy = 8;
   });
 
   const sphereGeo = useMemo(() => new THREE.SphereGeometry(1, 96, 96), []);
 
+  // Rotación suave del planeta y ligera deriva de nubes
+  useFrame((_, dt) => {
+    if (groupRef.current) groupRef.current.rotation.y += dt * 0.08;
+    if (cloudsRef.current) cloudsRef.current.rotation.y += dt * 0.02;
+  });
+
   return (
-    <group ref={ref} scale={scale}>
-      {/* Tierra (día) */}
+    <group ref={groupRef} scale={scale}>
+      {/* Tierra (día) con normal+specular */}
       <mesh geometry={sphereGeo}>
         <meshPhongMaterial
           map={colorMap}
           normalMap={normalMap}
           specularMap={specularMap}
-          shininess={12}
+          shininess={18}
         />
       </mesh>
 
-      {/* Nubes (ligeramente más grandes) */}
-      <mesh geometry={sphereGeo} scale={1.01}>
+      {/* Nubes (un poco más grandes, semi-transp) */}
+      <mesh ref={cloudsRef} geometry={sphereGeo} scale={1.01}>
         <meshStandardMaterial
           map={cloudsMap}
           transparent
@@ -53,7 +55,7 @@ function TexturedEarth({ scale = 1.45 }: { scale?: number }) {
         />
       </mesh>
 
-      {/* Luces nocturnas (additive) */}
+      {/* Luces nocturnas (sumadas) */}
       <mesh geometry={sphereGeo}>
         <meshBasicMaterial
           map={lightsMap}
@@ -80,20 +82,27 @@ function TexturedEarth({ scale = 1.45 }: { scale?: number }) {
 export default function Earth() {
   return (
     <div className="pointer-events-none absolute inset-0">
-      <Canvas dpr={[1, 2]} camera={{ position: [0, 0, 3.6], fov: 60 }} style={{ background: 'transparent' }}>
-        <ambientLight intensity={0.6} />
-        <directionalLight position={[3, 5, 2]} intensity={1.15} />
+      <Canvas
+        dpr={[1, 2]}
+        camera={{ position: [0, 0, 3.6], fov: 60 }}
+        style={{ background: 'transparent' }}
+        gl={{ toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.25 }}
+      >
+        {/* Iluminación más viva */}
+        <ambientLight intensity={0.7} />
+        <hemisphereLight skyColor={'#bcd3ff'} groundColor={'#090b10'} intensity={0.35} />
+        <directionalLight position={[3, 5, 2]} intensity={1.25} />
         <directionalLight position={[-4, -2, -2]} intensity={0.35} />
 
         <Suspense fallback={null}>
-          {/* Alineado a la derecha para dar respiro al texto */}
+          {/* Alineado a la derecha, con respiro al texto */}
           <group position={[1.0, 0.05, 0]}>
             <TexturedEarth />
           </group>
-          <Stars radius={120} depth={60} count={1200} factor={3.0} fade speed={0.5} />
+          <Stars radius={140} depth={70} count={1400} factor={3.0} fade speed={0.4} />
         </Suspense>
 
-        <OrbitControls enableZoom={false} enablePan={false} autoRotate autoRotateSpeed={0.35} />
+        {/* Importante: sin OrbitControls (cero interacción de mouse) */}
       </Canvas>
     </div>
   );
