@@ -2,7 +2,7 @@
 
 import { Canvas, useFrame } from '@react-three/fiber';
 import { Stars, useTexture } from '@react-three/drei';
-import { Suspense, useRef, useMemo, useState } from 'react';
+import { Suspense, useRef, useMemo, useState, useEffect } from 'react';
 import * as THREE from 'three';
 
 function TexturedEarth({
@@ -16,6 +16,12 @@ function TexturedEarth({
 }) {
   const groupRef = useRef<THREE.Group>(null!);
   const cloudsRef = useRef<THREE.Mesh>(null!);
+
+  // === refs que SIEMPRE se actualizan con el speed actual (sin problema de closures)
+  const speedRef = useRef(speed);
+  const cloudsSpeedRef = useRef(cloudsSpeed);
+  useEffect(() => { speedRef.current = speed; }, [speed]);
+  useEffect(() => { cloudsSpeedRef.current = cloudsSpeed; }, [cloudsSpeed]);
 
   const [colorMap, normalMap, specularMap, cloudsMap, lightsMap] = useTexture([
     '/textures/earth/earth_atmos_2048.jpg',
@@ -35,13 +41,12 @@ function TexturedEarth({
   const sphereGeo = useMemo(() => new THREE.SphereGeometry(1, 128, 128), []);
 
   useFrame((_, dt) => {
-    if (groupRef.current) groupRef.current.rotation.y += dt * speed;
-    if (cloudsRef.current) cloudsRef.current.rotation.y += dt * cloudsSpeed;
+    if (groupRef.current) groupRef.current.rotation.y += dt * speedRef.current;
+    if (cloudsRef.current) cloudsRef.current.rotation.y += dt * cloudsSpeedRef.current;
   });
 
   return (
     <group ref={groupRef} scale={scale}>
-      {/* Superficie (día) */}
       <mesh geometry={sphereGeo}>
         <meshPhongMaterial
           map={colorMap}
@@ -53,7 +58,6 @@ function TexturedEarth({
         />
       </mesh>
 
-      {/* Nubes */}
       <mesh ref={cloudsRef} geometry={sphereGeo} scale={1.008}>
         <meshStandardMaterial
           map={cloudsMap}
@@ -63,7 +67,6 @@ function TexturedEarth({
         />
       </mesh>
 
-      {/* Luces nocturnas muy leves */}
       <mesh geometry={sphereGeo}>
         <meshBasicMaterial
           map={lightsMap}
@@ -73,7 +76,6 @@ function TexturedEarth({
         />
       </mesh>
 
-      {/* Halo atmosférico */}
       <mesh geometry={sphereGeo} scale={1.03}>
         <meshPhysicalMaterial
           color="#66c2ff"
@@ -103,20 +105,13 @@ function MovingStars() {
 }
 
 export default function Earth() {
-  // Estado de "hover" para acelerar la rotación
   const [hover, setHover] = useState(false);
 
-  const earthSpeed = hover ? 0.22 : 0.08;       // velocidad planeta
-  const cloudsSpeed = hover ? 0.06 : 0.03;      // velocidad nubes
+  const earthSpeed = hover ? 0.22 : 0.08;
+  const cloudsSpeed = hover ? 0.06 : 0.03;
 
   return (
     <div className="absolute inset-0">
-      {/* Capa invisible que detecta hover sin habilitar drag/zoom */}
-      <div
-        className="absolute inset-0 z-0"
-        onMouseEnter={() => setHover(true)}
-        onMouseLeave={() => setHover(false)}
-      />
       <Canvas
         dpr={[1, 2]}
         camera={{ position: [0, 0, 4.2], fov: 58 }}
@@ -127,8 +122,10 @@ export default function Earth() {
           outputColorSpace: THREE.SRGBColorSpace,
           physicallyCorrectLights: true,
         }}
+        // <- AQUÍ capturamos el hover directamente en el Canvas
+        onPointerEnter={() => setHover(true)}
+        onPointerLeave={() => setHover(false)}
       >
-        {/* Iluminación de día */}
         <ambientLight intensity={0.9} />
         <hemisphereLight skyColor={'#cfe0ff'} groundColor={'#0a0c10'} intensity={0.5} />
         <directionalLight color={'#ffe9bf'} position={[5, 3, 2]} intensity={1.7} />
@@ -136,7 +133,6 @@ export default function Earth() {
         <directionalLight position={[-2, -1, 1]} intensity={0.35} />
 
         <Suspense fallback={null}>
-          {/* Posicionada a la derecha para dejar espacio al texto */}
           <group position={[0.65, 0.02, 0]}>
             <TexturedEarth scale={1.15} speed={earthSpeed} cloudsSpeed={cloudsSpeed} />
           </group>
