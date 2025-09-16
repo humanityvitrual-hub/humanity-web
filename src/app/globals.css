@@ -1,6 +1,4 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
 
 /* base mínima legible */
 :root { --bg: #000; --fg: #fff; }

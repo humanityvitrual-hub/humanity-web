@@ -6,10 +6,11 @@ const EarthClient = dynamic(() => import('@/components/EarthClient'), { ssr: fal
 
 export default function Landing() {
   return (
-    <main className="relative min-h-screen bg-black text-white">
+    <main className="relative min-h-screen bg-black text-white overflow-hidden">
       {/* Fondo 3D: Tierra */}
-      <div className="pointer-events-none absolute inset-0 -z-10">
+      <div className="pointer-events-none absolute inset-0">
         <EarthClient />
+        {/* Oscurecido para contraste del texto */}
         <div className="absolute inset-0 bg-black/55" />
       </div>
 
