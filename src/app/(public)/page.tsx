@@ -1,22 +1,23 @@
 'use client';
+import dynamic from 'next/dynamic';
 import Header from '@/components/Header';
+
+const EarthClient = dynamic(() => import('@/components/EarthClient'), { ssr: false });
 
 export default function Landing() {
   return (
-    <main className="relative min-h-screen overflow-hidden bg-black text-white">
-      {/* Fondo: imagen de la Tierra */}
-      <div
-        aria-hidden
-        className="absolute inset-0 z-0 bg-cover bg-center"
-        style={{ backgroundImage: "url('/images/earth-hero.jpg')" }}
-      />
-      {/* Oscurecido para legibilidad */}
-      <div className="absolute inset-0 z-0 bg-black/55" />
+    <main className="relative min-h-screen bg-black text-white overflow-hidden">
+      {/* Fondo 3D: Tierra */}
+      <div className="pointer-events-none absolute inset-0">
+        <EarthClient />
+        {/* Oscurecido para contraste del texto */}
+        <div className="absolute inset-0 bg-black/55" />
+      </div>
 
-      {/* Header fijo */}
+      {/* Header */}
       <Header />
 
-      {/* Contenido central */}
+      {/* Contenido */}
       <section className="relative z-10 mx-auto grid max-w-7xl grid-cols-1 gap-10 px-6 pt-28 pb-16 md:grid-cols-2 md:pt-36">
         <div className="flex flex-col items-center text-center md:items-start md:text-left">
           <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold leading-tight tracking-tight">
@@ -32,7 +33,7 @@ export default function Landing() {
           </div>
         </div>
 
-        {/* Columna derecha vacía: la Tierra queda de fondo */}
+        {/* Columna derecha vacía (la Tierra queda de fondo) */}
         <div className="hidden md:block" />
       </section>
     </main>
