@@ -2,10 +2,18 @@
 
 import { Canvas, useFrame } from '@react-three/fiber';
 import { Stars, useTexture } from '@react-three/drei';
-import { Suspense, useRef, useMemo } from 'react';
+import { Suspense, useRef, useMemo, useState } from 'react';
 import * as THREE from 'three';
 
-function TexturedEarth({ scale = 1.15 }: { scale?: number }) {
+function TexturedEarth({
+  scale = 1.15,
+  speed = 0.08,
+  cloudsSpeed = 0.03,
+}: {
+  scale?: number;
+  speed?: number;
+  cloudsSpeed?: number;
+}) {
   const groupRef = useRef<THREE.Group>(null!);
   const cloudsRef = useRef<THREE.Mesh>(null!);
 
@@ -26,15 +34,14 @@ function TexturedEarth({ scale = 1.15 }: { scale?: number }) {
 
   const sphereGeo = useMemo(() => new THREE.SphereGeometry(1, 128, 128), []);
 
-  // Rotación del planeta + deriva suave de nubes
   useFrame((_, dt) => {
-    if (groupRef.current) groupRef.current.rotation.y += dt * 0.08;
-    if (cloudsRef.current) cloudsRef.current.rotation.y += dt * 0.03;
+    if (groupRef.current) groupRef.current.rotation.y += dt * speed;
+    if (cloudsRef.current) cloudsRef.current.rotation.y += dt * cloudsSpeed;
   });
 
   return (
     <group ref={groupRef} scale={scale}>
-      {/* Superficie (día) con normal + specular */}
+      {/* Superficie (día) */}
       <mesh geometry={sphereGeo}>
         <meshPhongMaterial
           map={colorMap}
@@ -56,7 +63,7 @@ function TexturedEarth({ scale = 1.15 }: { scale?: number }) {
         />
       </mesh>
 
-      {/* Luces nocturnas muy leves (casi de día) */}
+      {/* Luces nocturnas muy leves */}
       <mesh geometry={sphereGeo}>
         <meshBasicMaterial
           map={lightsMap}
@@ -66,7 +73,7 @@ function TexturedEarth({ scale = 1.15 }: { scale?: number }) {
         />
       </mesh>
 
-      {/* Halo/atmósfera para el borde */}
+      {/* Halo atmosférico */}
       <mesh geometry={sphereGeo} scale={1.03}>
         <meshPhysicalMaterial
           color="#66c2ff"
@@ -96,20 +103,32 @@ function MovingStars() {
 }
 
 export default function Earth() {
+  // Estado de "hover" para acelerar la rotación
+  const [hover, setHover] = useState(false);
+
+  const earthSpeed = hover ? 0.22 : 0.08;       // velocidad planeta
+  const cloudsSpeed = hover ? 0.06 : 0.03;      // velocidad nubes
+
   return (
-    <div className="pointer-events-none absolute inset-0">
+    <div className="absolute inset-0">
+      {/* Capa invisible que detecta hover sin habilitar drag/zoom */}
+      <div
+        className="absolute inset-0 z-0"
+        onMouseEnter={() => setHover(true)}
+        onMouseLeave={() => setHover(false)}
+      />
       <Canvas
         dpr={[1, 2]}
-        camera={{ position: [0, 0, 4.2], fov: 58 }}   // más lejos => más pequeña
+        camera={{ position: [0, 0, 4.2], fov: 58 }}
         style={{ background: 'transparent' }}
         gl={{
           toneMapping: THREE.ACESFilmicToneMapping,
-          toneMappingExposure: 1.85,                  // más vivo/brillante
+          toneMappingExposure: 1.85,
           outputColorSpace: THREE.SRGBColorSpace,
-          physicallyCorrectLights: true
+          physicallyCorrectLights: true,
         }}
       >
-        {/* Iluminación tipo día: sol cálido + rim frío */}
+        {/* Iluminación de día */}
         <ambientLight intensity={0.9} />
         <hemisphereLight skyColor={'#cfe0ff'} groundColor={'#0a0c10'} intensity={0.5} />
         <directionalLight color={'#ffe9bf'} position={[5, 3, 2]} intensity={1.7} />
@@ -117,14 +136,12 @@ export default function Earth() {
         <directionalLight position={[-2, -1, 1]} intensity={0.35} />
 
         <Suspense fallback={null}>
-          {/* Más hacia el centro-derecha, dejando aire al texto */}
+          {/* Posicionada a la derecha para dejar espacio al texto */}
           <group position={[0.65, 0.02, 0]}>
-            <TexturedEarth />
+            <TexturedEarth scale={1.15} speed={earthSpeed} cloudsSpeed={cloudsSpeed} />
           </group>
           <MovingStars />
         </Suspense>
-
-        {/* Sin OrbitControls: cero interacción */}
       </Canvas>
     </div>
   );
