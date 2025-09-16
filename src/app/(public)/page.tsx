@@ -8,7 +8,7 @@ export default function Landing() {
   return (
     <main className="relative min-h-screen bg-black text-white">
       {/* Fondo 3D: Tierra */}
-      <div className="pointer-events-none absolute inset-0 -z-10">
+      <div className="pointer-events-none absolute inset-0">
         <EarthClient />
         <div className="absolute inset-0 bg-black/55" />
       </div>
