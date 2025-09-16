@@ -21,7 +21,7 @@ function Globe() {
 
 export default function Earth() {
   return (
-    <div className="pointer-events-none absolute inset-0 -z-10">
+    <div className="pointer-events-none absolute inset-0">
       <Canvas dpr={[1, 2]} camera={{ position: [0, 0, 3] }} style={{ background: 'transparent' }}>
         <ambientLight intensity={0.7} />
         <directionalLight position={[3, 5, 2]} intensity={1.2} />
