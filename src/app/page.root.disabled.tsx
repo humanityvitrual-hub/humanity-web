@@ -1,7 +1,5 @@
 'use client';
-import AvatarAssistant from "@components/AvatarAssistant";
 
-import AvatarHost from '@/components/AvatarHost';
 
 export default function Landing() {
   return (
@@ -14,7 +12,6 @@ export default function Landing() {
           </h1>
           <p className="mt-4 text-lg text-zinc-300 max-w-xl">
             Your Own World
-    <AvatarAssistant />
           </p>
           <div className="mt-6 flex gap-4">
             <button className="px-5 py-3 rounded-lg bg-white text-black font-semibold">
@@ -28,7 +25,6 @@ export default function Landing() {
 
         {/* Avatar lado derecho */}
         <div className="flex justify-center">
-          <AvatarHost />
         </div>
       </section>
     </main>

@@ -1,64 +1,57 @@
-"use client";
+'use client';
+import { Canvas } from '@react-three/fiber';
+import { OrbitControls, useGLTF } from '@react-three/drei';
+import { useMemo } from 'react';
+import { Box3, Vector3 } from 'three';
 
-import { Suspense, useMemo, useState } from "react";
-import { Canvas } from "@react-three/fiber";
-import { useGLTF, Float, Environment, ContactShadows } from "@react-three/drei";
-import * as THREE from "three";
+function FittedModel() {
+  // Carga /avatar.glb (ya sin overrides)
+  const { scene } = useGLTF('/avatar.glb');
 
-function AvatarModel({ onError }: { onError: (e: unknown) => void }) {
-  try {
-    const { scene } = useGLTF("/models/avatar.glb");
-    const normalized = useMemo(() => {
-      const s = scene.clone(true);
-      const box = new THREE.Box3().setFromObject(s);
-      const size = box.getSize(new THREE.Vector3()).length();
-      const scale = size > 0 ? 1.6 / size : 1;
-      s.scale.setScalar(scale);
-      box.setFromObject(s);
-      const center = box.getCenter(new THREE.Vector3());
-      s.position.sub(center);
-      s.position.y -= 0.2;
-      return s;
-    }, [scene]);
-    return <primitive object={normalized} />;
-  } catch (e) {
-    onError(e);
-    return null;
-  }
-}
-useGLTF.preload("/models/avatar.glb");
+  // Procesa: centra, escala y pone “de pie” al modelo
+  const fitted = useMemo(() => {
+    // Clonar para no mutar el original
+    const root = scene.clone(true);
 
-function Fallback() {
-  return (
-    <Float speed={1} rotationIntensity={0.25} floatIntensity={0.6}>
-      <mesh castShadow>
-        <icosahedronGeometry args={[0.6, 1]} />
-        <meshStandardMaterial metalness={0.2} roughness={0.4} />
-      </mesh>
-    </Float>
-  );
+    // Sombras (opcional)
+    root.traverse((o: any) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+
+    // 1) Bounding inicial
+    const box = new Box3().setFromObject(root);
+    const center = box.getCenter(new Vector3());
+    const size = box.getSize(new Vector3());
+
+    // 2) Centrar en X/Z (no tocar Y aún)
+    root.position.sub(new Vector3(center.x, 0, center.z));
+
+    // 3) Escalar a altura objetivo (p.ej. 1.8 m)
+    const targetHeight = 1.8;
+    const scale = size.y > 0 ? targetHeight / size.y : 1;
+    root.scale.setScalar(scale);
+
+    // 4) Recalcular y “bajar” hasta que minY sea 0 (parado en suelo)
+    const boxAfter = new Box3().setFromObject(root);
+    const minY = boxAfter.min.y;
+    root.position.y -= minY; // ahora toca el suelo
+
+    return root;
+  }, [scene]);
+
+  return <primitive object={fitted} />;
 }
 
 export default function Avatar3D() {
-  const [err, setErr] = useState<unknown | null>(null);
-
   return (
-    <div className="relative w-[260px] h-[260px]">
-      {err && (
-        <div className="absolute inset-0 z-10 flex items-center justify-center rounded-2xl bg-red-600/20 text-red-300 text-xs font-semibold p-2">
-          Error cargando /models/avatar.glb — revisa ruta y CORS
-        </div>
-      )}
-      <Canvas camera={{ position: [0, 0.8, 2.3], fov: 40 }} shadows gl={{ alpha: true, antialias: true }}>
-        <ambientLight intensity={0.5} />
-        <directionalLight position={[1.5, 2, 2]} intensity={1.1} castShadow />
-        <directionalLight position={[-2, 1, -1.5]} intensity={0.4} />
-        <Environment preset="city" />
-        <Suspense fallback={<Fallback />}>
-          <AvatarModel onError={setErr} />
-          <ContactShadows position={[0, -0.8, 0]} scale={3} opacity={0.25} blur={1.8} far={2.8} />
-        </Suspense>
+    <div className="mt-8 w-[520px] h-[520px] mx-auto">
+      <Canvas camera={{ position: [0, 1.2, 3.2], fov: 45 }} shadows>
+        <ambientLight intensity={0.6} />
+        <directionalLight position={[3, 5, 2]} intensity={1.1} castShadow />
+        <FittedModel />
+        <OrbitControls enablePan={false} enableDamping />
       </Canvas>
+      <p className="text-center text-zinc-300 text-sm mt-2">
+        Modelo: /avatar.glb — auto-fit (centrado/escala/suelo)
+      </p>
     </div>
   );
 }

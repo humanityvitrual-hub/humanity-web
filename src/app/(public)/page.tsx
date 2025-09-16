@@ -1,8 +1,8 @@
 'use client';
-import AvatarAssistant from "@components/AvatarAssistant";
+import HumanAvatar from '@/components/HumanAvatar';
+import TalkingHead3D from "@/components/TalkingHead3D";
 
 import Header from '@/components/Header';
-import AvatarHost from '@/components/AvatarHost';
 
 export default function Landing() {
   return (
@@ -29,7 +29,7 @@ export default function Landing() {
           <p className="mt-4 text-lg text-zinc-300 max-w-xl">
             Your Own World
           </p>
-    <AvatarAssistant />
+    <HumanAvatar />
 
           <div className="mt-6 flex gap-4">
             <button className="px-5 py-3 rounded-lg bg-white text-black font-semibold">
@@ -47,7 +47,6 @@ export default function Landing() {
             <div className="absolute inset-0 rounded-full bg-white/15 blur-2xl" />
             <div className="relative rounded-full ring-2 ring-white/70 overflow-hidden shadow-2xl">
               {/* Tu componente de avatar */}
-              <AvatarHost />
             </div>
           </div>
         </div>
