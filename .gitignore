@@ -39,3 +39,15 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Local preview/test artifacts
+.data/
+.local_login.json
+.local_signup.json
+.signin.json
+.signup.json
+.preview_login.json
+.preview_signup.json
+.preview_signup_header.json
+.vercel_cookies.txt
+.next-dev.*
