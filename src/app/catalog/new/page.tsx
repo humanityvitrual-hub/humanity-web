@@ -56,7 +56,7 @@ export default function NewProduct() {
               min="0"
               step="0.01"
               placeholder="Precio"
-              value={price}
+              value={price as any}
               onChange={(e) => setPrice(e.target.value === '' ? '' : Number(e.target.value))}
             />
             <label className="block">

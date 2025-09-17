@@ -6,7 +6,9 @@ import Pano360 from '@/components/Pano360';
 type Product = { id: string; name: string; price: number; panoDataUrl: string; createdAt: number };
 
 export default function ProductDetail() {
-  const { id } = useParams<{id:string}>();
+  const params = useParams();
+  const rawId = (params as any)?.id;
+  const id = Array.isArray(rawId) ? (rawId[0] as string) : (rawId as string);
   const router = useRouter();
   const [p, setP] = useState<Product | null>(null);
 
