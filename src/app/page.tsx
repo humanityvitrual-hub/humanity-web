@@ -7,7 +7,7 @@ export default function Home() {
         </div>
       </header>
 
-      <section className="mx-auto max-w-3xl px-6 pt-10 pb-12">
+      <section className="mx-auto max-w-3xl px-6 pt-10 pb-24">
         <h1 className="text-5xl font-bold tracking-tight">
           Build your own virtual world
         </h1>
@@ -29,19 +29,6 @@ export default function Home() {
           >
             View demo
           </a>
-        </div>
-      </section>
-
-      <section className="mx-auto max-w-3xl px-6 pb-24">
-        <div className="rounded-xl border bg-white/70 backdrop-blur p-6 shadow">
-          <p>
-            If you can see a <span className="font-semibold">background gradient</span>, a{' '}
-            <span className="font-semibold">card with border</span> and{' '}
-            <span className="font-semibold">shadow</span>, Tailwind is working.
-          </p>
-          <button className="mt-4 rounded-lg border px-4 py-2 shadow-sm hover:shadow transition">
-            Test button
-          </button>
         </div>
       </section>
     </main>
