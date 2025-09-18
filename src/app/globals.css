@@ -1,5 +1,1 @@
 @import "tailwindcss";
-
-/* base mínima legible */
-:root { --bg: #000; --fg: #fff; }
-html, body { background: var(--bg); color: var(--fg); }
