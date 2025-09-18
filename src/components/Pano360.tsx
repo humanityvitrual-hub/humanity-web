@@ -1,26 +1,26 @@
 'use client';
+
 import { Canvas, useLoader } from '@react-three/fiber';
-import { OrbitControls } from '@react-three/drei';
-import * as THREE from 'three';
+import { OrbitControls, PerspectiveCamera } from '@react-three/drei';
+import { TextureLoader, BackSide } from 'three';
 
-export default function Pano360({ src, height='h-72' }: { src: string; height?: string }) {
-  const texture = useLoader(THREE.TextureLoader, src);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.needsUpdate = true;
-
+function Sphere({ src }: { src: string }) {
+  const tex = useLoader(TextureLoader, src);
   return (
-    <div className={height + " overflow-hidden rounded-xl border border-white/10 bg-black/40"}>
-      <Canvas
-        dpr={[1, 2]}
-        camera={{ position: [0, 0, 0.1], fov: 75 }}
-        style={{ background: 'black' }}
-      >
-        {/* Esfera invertida: mostramos la textura por dentro */}
-        <mesh>
-          <sphereGeometry args={[1, 64, 64]} />
-          <meshBasicMaterial map={texture} side={THREE.BackSide} />
-        </mesh>
-        <OrbitControls enableZoom={false} enablePan={false} enableRotate rotateSpeed={0.7} />
+    <mesh scale={[-1, 1, 1]}>
+      <sphereGeometry args={[10, 64, 64]} />
+      <meshBasicMaterial map={tex} side={BackSide} />
+    </mesh>
+  );
+}
+
+export default function Pano360({ src, height = 420 }: { src: string; height?: number }) {
+  return (
+    <div style={{ height }} className="rounded-xl overflow-hidden">
+      <Canvas>
+        <PerspectiveCamera makeDefault fov={75} position={[0, 0, 0.1]} />
+        <OrbitControls enablePan={false} enableDamping dampingFactor={0.05} />
+        <Sphere src={src} />
       </Canvas>
     </div>
   );
