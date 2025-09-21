@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Link from "next/link";
 import { addProductFromFile, ensureDraft, seedDemo } from '@/lib/storage';
 import { useRouter } from 'next/navigation';
 
@@ -35,6 +36,7 @@ export default function CreateShopPage() {
         <label className="rounded-lg border px-4 py-2 cursor-pointer">
           <input type="file" accept="image/*" className="hidden" onChange={onUpload} disabled={busy} />
           Upload 360
+          <Link href="/spin" className="ml-3 px-3 py-2 rounded-lg border bg-white/70 shadow-sm hover:shadow transition text-sm">Upload spin video</Link>
         </label>
       </div>
     </main>

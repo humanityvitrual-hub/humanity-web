@@ -10,11 +10,8 @@ export default function SpinVideoPage() {
   const [isDragging, setIsDragging] = useState(false);
   const [duration, setDuration] = useState(0);
 
-  // Limpieza del objectURL anterior
   useEffect(() => {
-    return () => {
-      if (objUrl) URL.revokeObjectURL(objUrl);
-    };
+    return () => { if (objUrl) URL.revokeObjectURL(objUrl); };
   }, [objUrl]);
 
   const onPickFile = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -31,17 +28,16 @@ export default function SpinVideoPage() {
     if (!v) return;
     setDuration(v.duration || 0);
     setLoaded(true);
-    // Arrancamos pausado para scrub más fluido
     v.pause();
     v.currentTime = 0;
   };
 
-  const seekFromEvent = (ev: React.PointerEvent | PointerEvent) => {
+  const seekFromEvent = (ev: PointerEvent) => {
     if (!dragEnabled) return;
     const v = videoRef.current;
     if (!v || !duration) return;
     const rect = v.getBoundingClientRect();
-    const x = Math.min(Math.max((ev as PointerEvent).clientX - rect.left, 0), rect.width);
+    const x = Math.min(Math.max(ev.clientX - rect.left, 0), rect.width);
     const frac = rect.width ? x / rect.width : 0;
     v.pause();
     v.currentTime = frac * duration;
@@ -77,17 +73,12 @@ export default function SpinVideoPage() {
       <div className="max-w-4xl mx-auto pt-10">
         <h1 className="text-3xl md:text-4xl font-bold tracking-tight">Video spin (local)</h1>
         <p className="mt-2 text-slate-600">
-          Carga un video corto (8–12s) de tu producto girando. No se sube a ningún servidor: se procesa localmente en el navegador.
+          Carga un video corto (8–12s) del producto girando. Se procesa localmente (Preview), no se sube a servidor.
         </p>
 
         <div className="mt-6 flex flex-wrap gap-3 items-center">
           <label className="inline-flex items-center px-4 py-2 rounded-lg border bg-white/70 shadow-sm hover:shadow transition cursor-pointer">
-            <input
-              type="file"
-              accept="video/*"
-              onChange={onPickFile}
-              className="sr-only"
-            />
+            <input type="file" accept="video/*" onChange={onPickFile} className="sr-only" />
             <span>Choose spin video</span>
           </label>
 
@@ -149,8 +140,7 @@ export default function SpinVideoPage() {
         </div>
 
         <p className="mt-4 text-xs text-slate-500">
-          Nota: la rotación por arrastre funciona localmente. Para convertir a sprites/frames y guardarlo como producto 360,
-          más adelante lo conectamos con tu flujo de “Create shop”.
+          Próximo paso: si quieres, conectamos este flujo con la creación del producto 360 y guardado en tu “Create shop”.
         </p>
       </div>
     </main>
