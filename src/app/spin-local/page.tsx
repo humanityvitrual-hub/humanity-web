@@ -4,20 +4,16 @@ import { useEffect, useState } from 'react';
 import SpinViewer from '@/components/SpinViewer';
 
 export default function SpinLocal() {
-  const [src, setSrc] = useState<string | null>(null);
-  const [name, setName] = useState<string | null>(null);
-  const [msg, setMsg] = useState<string>('');
+  const [src, setSrc] = useState(null);
+  const [name, setName] = useState(null);
+  const [msg, setMsg] = useState('');
 
-  useEffect(() => {
-    return () => { if (src) URL.revokeObjectURL(src); };
-  }, [src]);
+  useEffect(() => () => { if (src) URL.revokeObjectURL(src); }, [src]);
 
-  function onPick(e: React.ChangeEvent<HTMLInputElement>) {
+  function onPick(e) {
     const f = e.target.files?.[0];
     if (!f) return;
-    if (!f.type.startsWith('video/')) {
-      setMsg('Choose a video file'); return;
-    }
+    if (!f.type.startsWith('video/')) { setMsg('Choose a video file'); return; }
     if (src) URL.revokeObjectURL(src);
     const url = URL.createObjectURL(f);
     setSrc(url);
@@ -32,12 +28,7 @@ export default function SpinLocal() {
         <p className="mt-2 text-slate-600">Pick a short product spin video (8–12s). No backend; works in Vercel Preview.</p>
 
         <div className="mt-6 flex flex-col sm:flex-row gap-3 items-start">
-          <input
-            type="file"
-            accept="video/*"
-            onChange={onPick}
-            className="block rounded-lg border px-4 py-2 bg-white"
-          />
+          <input type="file" accept="video/*" onChange={onPick} className="block rounded-lg border px-4 py-2 bg-white" />
           <span className="text-sm text-slate-600">{msg}</span>
         </div>
 

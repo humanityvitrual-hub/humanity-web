@@ -2,36 +2,35 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
 
-type Props = { src: string; poster?: string; autoPlay?: boolean; className?: string; };
-
-export default function SpinViewer({ src, poster, autoPlay = true, className = '' }: Props) {
-  const videoRef = useRef<HTMLVideoElement | null>(null);
+export default function SpinViewer({ src, poster, autoPlay = true, className = '' }) {
+  const videoRef = useRef(null);
   const [duration, setDuration] = useState(0);
   const [dragging, setDragging] = useState(false);
   const startX = useRef(0);
   const startTime = useRef(0);
 
   useEffect(() => {
-    const v = videoRef.current;
-    if (!v) return;
+    const v = videoRef.current; if (!v) return;
     const onMeta = () => {
       setDuration(v.duration || 0);
-      v.loop = true;
-      v.muted = true;
+      v.loop = true; v.muted = true;
       if (autoPlay) v.play().catch(() => {});
     };
     v.addEventListener('loadedmetadata', onMeta);
     return () => v.removeEventListener('loadedmetadata', onMeta);
   }, [autoPlay]);
 
-  const getX = (e: any) => ('clientX' in e ? e.clientX : 0);
+  const getX = (e) => ('clientX' in e ? e.clientX : 0);
 
-  const onDown = (e: any) => {
+  const onDown = (e) => {
     const v = videoRef.current; if (!v || !duration) return;
-    setDragging(true); startX.current = getX(e); startTime.current = v.currentTime || 0; v.pause();
+    setDragging(true);
+    startX.current = getX(e);
+    startTime.current = v.currentTime || 0;
+    v.pause();
     e.currentTarget.setPointerCapture?.(e.pointerId);
   };
-  const onMove = (e: any) => {
+  const onMove = (e) => {
     if (!dragging) return;
     const v = videoRef.current; if (!v || !duration) return;
     const rect = e.currentTarget.getBoundingClientRect();
@@ -41,8 +40,9 @@ export default function SpinViewer({ src, poster, autoPlay = true, className = '
     t = ((t % duration) + duration) % duration;
     v.currentTime = t;
   };
-  const onUp = (e: any) => {
-    if (!dragging) return; setDragging(false);
+  const onUp = (e) => {
+    if (!dragging) return;
+    setDragging(false);
     const v = videoRef.current; if (v && autoPlay) v.play().catch(() => {});
     e?.currentTarget?.releasePointerCapture?.(e.pointerId);
   };
