@@ -152,6 +152,66 @@ export default function SpinVideoPage() {
   };
 
   // sprite 6x6 en cliente (sobre fondo blanco)
+  // ---- helpers: trim & normalize frames (centering & scale) ----
+  const colorDist = (r,g,b,R,G,B) => Math.hypot(r-R,g-G,b-B);
+  const loadImg = (src: string) => new Promise<HTMLImageElement>((res, rej) => {
+    const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = src;
+  });
+
+  // Calcula bbox del sujeto comparando con color del fondo (toma esquina sup-izq)
+  const bboxFromBG = (im: HTMLImageElement, tol = 35) => {
+    const c = document.createElement("canvas"); c.width = im.width; c.height = im.height;
+    const ctx = c.getContext("2d")!; ctx.drawImage(im, 0, 0);
+    const { data, width, height } = ctx.getImageData(0,0,c.width,c.height);
+    const idx = (x:number,y:number)=>((y*width+x)<<2);
+    const R0 = data[idx(0,0)], G0 = data[idx(0,0)+1], B0 = data[idx(0,0)+2];
+    let minX=width, minY=height, maxX=-1, maxY=-1;
+    for(let y=0;y<height;y++){
+      for(let x=0;x<width;x++){
+        const i = idx(x,y); const r=data[i], g=data[i+1], b=data[i+2];
+        if(colorDist(r,g,b,R0,G0,B0) > tol){
+          if(x<minX)minX=x; if(y<minY)minY=y; if(x>maxX)maxX=x; if(y>maxY)maxY=y;
+        }
+      }
+    }
+    if(maxX<0) return {x:0,y:0,w:width,h:height};
+    return {x:minX, y:minY, w:Math.max(1,maxX-minX+1), h:Math.max(1,maxY-minY+1)};
+  };
+
+  // Normaliza: usa bbox union de todos los frames y paddings; devuelve imágenes recortadas centradas cuadradas
+  const normalizeFrames = async (srcs: string[], pad = 0.06) => {
+    const ims = await Promise.all(srcs.map(loadImg));
+    // union de bboxes (consistente entre frames)
+    let U = {x:Infinity, y:Infinity, w:0, h:0};
+    let maxW = 0, maxH = 0;
+    const boxes = ims.map(im=>{
+      const b = bboxFromBG(im);
+      if(b.x < U.x) U.x = b.x; if(b.y < U.y) U.y = b.y;
+      if(b.x+b.w > U.w) U.w = b.x+b.w; if(b.y+b.h > U.h) U.h = b.y+b.h;
+      if(im.width>maxW) maxW=im.width; if(im.height>maxH) maxH=im.height;
+      return b;
+    });
+    // pasar a width/height reales
+    U.w = Math.min(maxW, Math.max(1, U.w - Math.min(U.x,0)));
+    U.h = Math.min(maxH, Math.max(1, U.h - Math.min(U.y,0)));
+    // padding y cuadrado
+    const side = Math.round(Math.max(U.w, U.h) * (1+pad*2));
+    const out = ims.map((im,i)=>{
+      const cn = document.createElement("canvas"); cn.width = side; cn.height = side;
+      const cx = cn.getContext("2d")!; cx.fillStyle = "#ffffff"; cx.fillRect(0,0,side,side);
+      const b = boxes[i];
+      const scale = Math.min(side/(U.w*(1+pad*2)), side/(U.h*(1+pad*2)));
+      const dstW = Math.round(im.width*scale);
+      const dstH = Math.round(im.height*scale);
+      const dx = Math.round((side - dstW)/2 - U.x*scale);
+      const dy = Math.round((side - dstH)/2 - U.y*scale);
+      cx.imageSmoothingQuality = "high";
+      cx.drawImage(im, 0, 0, im.width, im.height, dx, dy, dstW, dstH);
+      return cn.toDataURL("image/webp", 0.92);
+    });
+    return {frames: out, cell: side};
+  };
+  // ---- end helpers ----\n
   const buildSpriteClient = async () => {
     if (frames.length !== 36) return;
     setBuilding(true);
