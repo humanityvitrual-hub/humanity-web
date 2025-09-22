@@ -219,6 +219,24 @@ export default function SpinVideoPage() {
                 title={canExtract ? "Extract 36 frames" : ""}
               >
                 {extracting ? "Extracting…" : "Generate 36 frames"}
+                <button
+                  disabled={!frames.length || matting}
+                  onClick={async () => {
+                    if (!frames.length || matting) return;
+                    try {
+                      setMatting(true);
+                      const res = await fetch("/api/matte", {
+                        method: "POST", headers: {"Content-Type":"application/json"},
+                        body: JSON.stringify({ frames })
+                      });
+                      const data = await res.json();
+                      if (data?.frames?.length) setFrames(data.frames);
+                    } finally { setMatting(false); }
+                  }}
+                  className="px-3 py-2 rounded-lg border bg-white/70 shadow-sm hover:shadow transition text-sm"
+                >
+                  {matting ? "Removing background…" : "Remove background"}
+                </button>
               </button>
               <button
                 onClick={clearVideo}
