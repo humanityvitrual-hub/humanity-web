@@ -9,44 +9,60 @@ type Props = {
   zoom?: boolean;
 };
 
-export default function Sprite360({ spriteSrc, manifest, inertia = 0.92, sens = 6, zoom = true }: Props) {
+export default function Sprite360({
+  spriteSrc,
+  manifest,
+  inertia = 0.94,
+  sens = 6,
+  zoom = false, // deshabilitado por defecto (UX tipo "silla")
+}: Props) {
   const { frames, cols, cell } = manifest;
   const [idx, setIdx] = useState(0);
   const [drag, setDrag] = useState(false);
   const vx = useRef(0);
   const raf = useRef<number | null>(null);
-  const [scale, setScale] = useState(1);
+  const autoSpin = useRef(0.25); // velocidad de auto-spin (frames/step)
+  const [scale] = useState(1);
 
   useEffect(() => {
     const loop = () => {
-      if (!drag && Math.abs(vx.current) > 0.01) {
-        setIdx(i => ((i + Math.round(vx.current)) % frames + frames) % frames);
+      if (!drag) {
+        // Auto-spin suave al estilo e-commerce
+        setIdx((i) => (i + autoSpin.current + frames) % frames);
+      } else if (Math.abs(vx.current) > 0.01) {
+        setIdx((i) => ((i + Math.round(vx.current)) % frames + frames) % frames);
         vx.current *= inertia!;
       }
       raf.current = requestAnimationFrame(loop);
     };
     raf.current = requestAnimationFrame(loop);
-    return () => { if (raf.current) cancelAnimationFrame(raf.current); };
+    return () => {
+      if (raf.current) cancelAnimationFrame(raf.current);
+    };
   }, [frames, inertia, drag]);
 
-  const onDown = (e: React.PointerEvent) => { setDrag(true); (e.target as HTMLElement).setPointerCapture?.(e.pointerId); };
-  const onUp = (e: React.PointerEvent) => { setDrag(false); (e.target as HTMLElement).releasePointerCapture?.(e.pointerId); };
+  const onDown = (e: React.PointerEvent) => {
+    setDrag(true);
+    (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
+  };
+  const onUp = (e: React.PointerEvent) => {
+    setDrag(false);
+    (e.target as HTMLElement).releasePointerCapture?.(e.pointerId);
+  };
   const onMove = (e: React.PointerEvent) => {
     if (!drag) return;
     const delta = e.movementX / sens!;
     if (delta) {
-      setIdx(i => ((i - Math.trunc(delta)) % frames + frames) % frames);
+      setIdx((i) => ((i - Math.trunc(delta)) % frames + frames) % frames);
       vx.current = delta;
     }
   };
-
-  const onWheel = (e: React.WheelEvent) => {
+  const onWheel = (_e: React.WheelEvent) => {
+    // zoom deshabilitado (comportamiento tipo "silla")
     if (!zoom) return;
-    e.preventDefault();
-    setScale(s => Math.min(3, Math.max(1, s + (e.deltaY < 0 ? 0.1 : -0.1))));
   };
 
-  const col = idx % cols;
+  const col = Math.floor(idx) % cols;
   const row = Math.floor(idx / cols);
   const bgX = -(col * cell.w);
   const bgY = -(row * cell.h);
@@ -59,20 +75,24 @@ export default function Sprite360({ spriteSrc, manifest, inertia = 0.92, sens = 
       onPointerCancel={onUp}
       onPointerMove={onMove}
       onWheel={onWheel}
-      style={{ width: cell.w * scale, height: cell.h * scale }}
+      style={{
+        // tamaño consistente estilo viewer de tienda
+        width: Math.min(560, cell.w) * scale,
+        height: Math.min(560, cell.h) * scale,
+      }}
     >
       <div
         style={{
-          width: cell.w * scale,
-          height: cell.h * scale,
+          width: "100%",
+          height: "100%",
           backgroundImage: `url(${spriteSrc})`,
           backgroundRepeat: "no-repeat",
           backgroundPosition: `${bgX * scale}px ${bgY * scale}px`,
           backgroundSize: `${cols * cell.w * scale}px auto`,
         }}
       />
-      <div className="absolute bottom-1 right-2 text-xs text-slate-600 bg-white/70 px-2 py-0.5 rounded">
-        {idx + 1}/{frames}
+      <div className="pointer-events-none absolute bottom-1 right-2 text-[11px] text-slate-600 bg-white/70 px-2 py-0.5 rounded">
+        {Math.floor(idx) + 1}/{frames}
       </div>
     </div>
   );
