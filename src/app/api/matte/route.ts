@@ -1,34 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
+const REPLICATE = process.env.REPLICATE_API_TOKEN;
+
+export async function GET() {
+  return NextResponse.json({ ok: !!REPLICATE });
+}
 
 type Payload = { frames: string[] };
-
-const REPLICATE = process.env.REPLICATE_API_TOKEN;
 
 async function removeBg(dataUrl: string) {
   if (!REPLICATE) throw new Error("Missing REPLICATE_API_TOKEN");
   const b64 = dataUrl.split(",")[1];
 
-  // Crear predicción
   const create = await fetch("https://api.replicate.com/v1/predictions", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Token ${REPLICATE}`,
-    },
-    body: JSON.stringify({
-      // rembg
-      version: "rembg",
-      input: {
-        image: `data:image/webp;base64,${b64}`,
-        background: "transparent",
-      },
-    }),
+    headers: { "Content-Type": "application/json", Authorization: `Token ${REPLICATE}` },
+    body: JSON.stringify({ version: "rembg", input: { image: `data:image/webp;base64,${b64}`, background: "transparent" } }),
   });
   if (!create.ok) throw new Error(await create.text());
   const created = await create.json();
   const url = created.urls?.get as string;
 
-  // Polling sencillo
   for (let i = 0; i < 60; i++) {
     const r = await fetch(url, { headers: { Authorization: `Token ${REPLICATE}` } });
     const j = await r.json();
@@ -50,14 +41,9 @@ export async function POST(req: NextRequest) {
     if (!Array.isArray(frames) || frames.length === 0) {
       return NextResponse.json({ error: "frames[] required" }, { status: 400 });
     }
-
-    const result: string[] = [];
-    // (Puedes paralelizar si quieres, pero con 36 frames esto está bien para MVP)
-    for (const f of frames) {
-      result.push(await removeBg(f));
-    }
-
-    return NextResponse.json({ frames: result });
+    const out: string[] = [];
+    for (const f of frames) out.push(await removeBg(f));
+    return NextResponse.json({ frames: out });
   } catch (err: any) {
     return NextResponse.json({ error: String(err?.message || err) }, { status: 500 });
   }
