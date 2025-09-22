@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import Sprite360 from "@/src/components/Sprite360";
+import Sprite360 from "@/components/Sprite360";
 
 export default function SpinVideoPage() {
   const N_FRAMES = 36;
