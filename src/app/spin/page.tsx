@@ -27,9 +27,9 @@ export default function SpinVideoPage() {
   useEffect(() => {
     return () => {
       if (objUrl) URL.revokeObjectURL(objUrl);
-    return () => {
-      if (objUrl) URL.revokeObjectURL(objUrl);
-
+      // data URLs – no revoke needed
+    };
+  }, [objUrl]);
   const onPickFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
     if (!f) return;
