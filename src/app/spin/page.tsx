@@ -1,5 +1,7 @@
 "use client";
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Sprite360 from "@/src/components/Sprite360";
 
 export default function SpinVideoPage() {
   const N_FRAMES = 36;
@@ -8,7 +10,7 @@ export default function SpinVideoPage() {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  const [objUrl, setObjUrl] = useState("");
+  const [objUrl, setObjUrl] = useState<string>("");
   const [loaded, setLoaded] = useState(false);
   const [duration, setDuration] = useState(0);
 
@@ -17,6 +19,10 @@ export default function SpinVideoPage() {
   const [frames, setFrames] = useState<string[]>([]);
   const [current, setCurrent] = useState(0);
   const [dragging, setDragging] = useState(false);
+
+  // sprite result
+  const [sprite, setSprite] = useState<string>("");
+  const [manifest, setManifest] = useState<{ frames: number; cols: number; rows: number; cell: { w: number; h: number } } | null>(null);
 
   useEffect(() => {
     return () => {
@@ -31,6 +37,8 @@ export default function SpinVideoPage() {
     if (objUrl) URL.revokeObjectURL(objUrl);
     frames.forEach((u) => URL.revokeObjectURL(u));
     setFrames([]);
+    setSprite("");
+    setManifest(null);
     setCurrent(0);
     const url = URL.createObjectURL(f);
     setObjUrl(url);
@@ -61,9 +69,14 @@ export default function SpinVideoPage() {
     const c = canvasRef.current;
     if (!v || !c || !duration) return;
 
-    try { v.muted = true; await v.play(); v.pause(); } catch {}
+    try {
+      v.muted = true;
+      await v.play();
+      v.pause();
+    } catch {}
 
-    const vw = v.videoWidth, vh = v.videoHeight;
+    const vw = v.videoWidth;
+    const vh = v.videoHeight;
     if (!vw || !vh) return;
 
     const side = Math.min(vw, vh);
@@ -83,9 +96,11 @@ export default function SpinVideoPage() {
 
     const dt = duration / N_FRAMES;
     for (let i = 0; i < N_FRAMES; i++) {
-      await seekTo(v, i * dt);
+      const t = i * dt;
+      await seekTo(v, t);
       ctx.clearRect(0, 0, c.width, c.height);
       ctx.drawImage(v, sx, sy, side, side, 0, 0, TARGET_SIZE, TARGET_SIZE);
+
       const blob: Blob = await new Promise((res) =>
         c.toBlob((b) => res(b as Blob), "image/webp", 0.92)
       );
@@ -100,6 +115,7 @@ export default function SpinVideoPage() {
     setExtracting(false);
   }, [duration, frames]);
 
+  // viewer (old behavior kept for preview)
   const onPointerDown = (ev: React.PointerEvent) => {
     if (!frames.length) return;
     setDragging(true);
@@ -129,19 +145,37 @@ export default function SpinVideoPage() {
     frames.forEach((u) => URL.revokeObjectURL(u));
     setObjUrl("");
     setFrames([]);
+    setSprite("");
+    setManifest(null);
     setLoaded(false);
     setDuration(0);
     setProgress(0);
     setCurrent(0);
   };
 
+  const buildSprite = async () => {
+    if (frames.length !== 36) return;
+    const res = await fetch("/api/sprite", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ frames, background: "white", tile: 6 }),
+    });
+    const data = await res.json();
+    if (data?.sprite && data?.manifest) {
+      setSprite(data.sprite);
+      setManifest(data.manifest);
+    } else {
+      console.error("sprite error", data);
+    }
+  };
+
   return (
     <main className="min-h-screen bg-gradient-to-b from-slate-50 to-white text-slate-900 p-6">
-      <div className="max-w-5xl mx-auto pt-10">
+      <div className="max-w-6xl mx-auto pt-10">
         <h1 className="text-3xl md:text-4xl font-bold tracking-tight">Create a 360 product from a video</h1>
         <p className="mt-2 text-slate-600">
           Upload a short spin video (8–12s). We extract <b>36 frames</b> in the browser and build a 360° viewer (drag to rotate).
-          This is <b>Preview-only</b>; no backend uploads.
+          Then we pack a <b>6×6 sprite</b> for a fast e-commerce viewer. This is <b>Preview-only</b>; no backend uploads.
         </p>
 
         <div className="mt-6 flex flex-wrap gap-3 items-center">
@@ -158,7 +192,7 @@ export default function SpinVideoPage() {
                 className="px-3 py-2 rounded-lg border bg-white/70 shadow-sm hover:shadow transition disabled:opacity-50 text-sm"
                 title={canExtract ? "Extract 36 frames" : ""}
               >
-                {extracting ? "Extracting…" : "Generate 360"}
+                {extracting ? "Extracting…" : "Generate 36 frames"}
               </button>
               <button
                 onClick={clearVideo}
@@ -166,14 +200,23 @@ export default function SpinVideoPage() {
               >
                 Reset
               </button>
+
+              {!!frames.length && !sprite && (
+                <button
+                  onClick={buildSprite}
+                  className="px-3 py-2 rounded-lg border bg-white/70 shadow-sm hover:shadow transition text-sm"
+                >
+                  Build sprite 6×6
+                </button>
+              )}
+
+              {loaded ? (
+                <span className="text-emerald-600 text-sm">Video ready</span>
+              ) : objUrl ? (
+                <span className="text-slate-500 text-sm">Loading metadata…</span>
+              ) : null}
             </>
           )}
-
-          {loaded ? (
-            <span className="text-emerald-600 text-sm">Video ready</span>
-          ) : objUrl ? (
-            <span className="text-slate-500 text-sm">Loading metadata…</span>
-          ) : null}
         </div>
 
         <div className="mt-6 grid md:grid-cols-2 gap-6">
@@ -197,7 +240,10 @@ export default function SpinVideoPage() {
             {extracting && (
               <div className="mt-3">
                 <div className="h-2 bg-slate-200 rounded">
-                  <div className="h-2 bg-slate-800 rounded transition-all" style={{ width: `${progress}%` }} />
+                  <div
+                    className="h-2 bg-slate-800 rounded transition-all"
+                    style={{ width: `${progress}%` }}
+                  />
                 </div>
                 <p className="text-xs mt-2 text-slate-500">Extracting frames… {progress}%</p>
               </div>
@@ -205,10 +251,12 @@ export default function SpinVideoPage() {
           </div>
 
           <div className="rounded-xl border bg-white/70 backdrop-blur p-3 shadow">
-            {!frames.length ? (
+            {!frames.length && !sprite ? (
               <div className="aspect-square grid place-items-center text-slate-500">
-                <p>When frames are ready, the 360° viewer appears here.</p>
+                <p>When frames are ready, the viewer appears here.</p>
               </div>
+            ) : sprite && manifest ? (
+              <Sprite360 spriteSrc={sprite} manifest={manifest} inertia={0.92} sens={6} zoom />
             ) : (
               <div
                 className="select-none touch-none"
@@ -217,7 +265,12 @@ export default function SpinVideoPage() {
                 onPointerCancel={onPointerUp}
                 onPointerMove={onPointerMove}
               >
-                <img src={frames[current]} alt={`frame-${current}`} draggable={false} className="w-full h-auto rounded-lg" />
+                <img
+                  src={frames[current]}
+                  alt={`frame-${current}`}
+                  draggable={false}
+                  className="w-full h-auto rounded-lg"
+                />
                 <div className="text-center mt-2 text-xs text-slate-500">
                   Drag horizontally to rotate • {current + 1}/{frames.length}
                 </div>
