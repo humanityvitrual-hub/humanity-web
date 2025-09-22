@@ -211,34 +211,33 @@ export default function SpinVideoPage() {
             <input type="file" accept="video/*" onChange={onPickFile} className="sr-only" />
             <span>Choose spin video</span>
           </label>
-
-          {objUrl && (
-            <>
-              <button
-                disabled={!canExtract}
-                onClick={extractFrames}
-                className="px-3 py-2 rounded-lg border bg-white/70 shadow-sm hover:shadow transition disabled:opacity-50 text-sm"
-                title={canExtract ? "Extract 36 frames" : ""}
-              >
-                {extracting ? "Extracting…" : "Generate 36 frames"}
+                <button
+                  disabled={!canExtract}
+                  onClick={extractFrames}
+                  className="px-3 py-2 rounded-lg border bg-white/70 shadow-sm hover:shadow transition disabled:opacity-50 text-sm"
+                  title={canExtract ? "Extract 36 frames" : ""}
+                >
+                  {extracting ? "Extracting…" : "Generate 36 frames"}
                 </button>
+
                 <button
                   disabled={!frames.length || matting}
                   onClick={async () => {
                     if (!frames.length || matting) return;
                     try {
                       setMatting(true);
-                      try { const res = await fetch("/api/matte", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ frames }) }); if(!res.ok){ const txt = await res.text(); alert("Background removal failed: " + txt); return; } const data = await res.json();
+                      const res = await fetch("/api/matte", {
+                        method: "POST", headers: {"Content-Type":"application/json"},
+                        body: JSON.stringify({ frames })
+                      });
+                      const data = await res.json();
                       if (data?.frames?.length) setFrames(data.frames);
-                  } catch(e){ console.error(e); alert("Matting error: " + e); } finally { setMatting(false); }
+                    } catch(e){ console.error(e); alert("Matting error: " + e); } finally { setMatting(false); }
                   }}
                   className="px-3 py-2 rounded-lg border bg-white/70 shadow-sm hover:shadow transition text-sm"
                 >
                   {matting ? "Removing background…" : "Remove background"}
                 </button>
-              </button>
-              <button
-                onClick={clearVideo}
                 className="px-3 py-2 rounded-lg border bg-white/70 shadow-sm hover:shadow transition text-sm"
               >
                 Reset
