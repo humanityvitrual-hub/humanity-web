@@ -23,6 +23,8 @@ export default function SpinVideoPage() {
   // sprite result
   const [sprite, setSprite] = useState<string>("");
   const [manifest, setManifest] = useState<{ frames: number; cols: number; rows: number; cell: { w: number; h: number } } | null>(null);
+  const [matting, setMatting] = useState(false);
+  const [building, setBuilding] = useState(false);
 
   useEffect(() => {
     return () => {
