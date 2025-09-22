@@ -227,13 +227,9 @@ export default function SpinVideoPage() {
                     if (!frames.length || matting) return;
                     try {
                       setMatting(true);
-                      const res = await fetch("/api/matte", {
-                        method: "POST", headers: {"Content-Type":"application/json"},
-                        body: JSON.stringify({ frames })
-                      });
-                      const data = await res.json();
+                      try { const res = await fetch("/api/matte", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ frames }) }); if(!res.ok){ const txt = await res.text(); alert("Background removal failed: " + txt); return; } const data = await res.json();
                       if (data?.frames?.length) setFrames(data.frames);
-                    } finally { setMatting(false); }
+                  } catch(e){ console.error(e); alert("Matting error: " + e); } finally { setMatting(false); }
                   }}
                   className="px-3 py-2 rounded-lg border bg-white/70 shadow-sm hover:shadow transition text-sm"
                 >
