@@ -221,6 +221,7 @@ export default function SpinVideoPage() {
                 title={canExtract ? "Extract 36 frames" : ""}
               >
                 {extracting ? "Extracting…" : "Generate 36 frames"}
+                </button>
                 <button
                   disabled={!frames.length || matting}
                   onClick={async () => {
