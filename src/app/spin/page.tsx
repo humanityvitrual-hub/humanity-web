@@ -227,23 +227,30 @@ export default function SpinVideoPage() {
                     try {
                       setMatting(true);
                       const res = await fetch("/api/matte", {
-                        method: "POST", headers: {"Content-Type":"application/json"},
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({ frames })
                       });
                       const data = await res.json();
                       if (data?.frames?.length) setFrames(data.frames);
-                    } catch(e){ console.error(e); alert("Matting error: " + e); } finally { setMatting(false); }
+                    } catch (e) {
+                      console.error(e);
+                      alert("Matting error: " + e);
+                    } finally {
+                      setMatting(false);
+                    }
                   }}
                   className="px-3 py-2 rounded-lg border bg-white/70 shadow-sm hover:shadow transition text-sm"
                 >
                   {matting ? "Removing background…" : "Remove background"}
                 </button>
-                className="px-3 py-2 rounded-lg border bg-white/70 shadow-sm hover:shadow transition text-sm"
-              >
-                Reset
-              </button>
 
-              {!!frames.length && !sprite && (
+                <button
+                  onClick={clearVideo}
+                  className="px-3 py-2 rounded-lg border bg-white/70 shadow-sm hover:shadow transition text-sm"
+                >
+                  Reset
+                </button>
                 <button
                   onClick={buildSpriteClient}
                   className="px-3 py-2 rounded-lg border bg-white/70 shadow-sm hover:shadow transition text-sm"
