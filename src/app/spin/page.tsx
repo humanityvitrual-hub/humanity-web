@@ -24,11 +24,11 @@ export default function SpinVideoPage() {
   const [sprite, setSprite] = useState<string>("");
   const [manifest, setManifest] = useState<{ frames: number; cols: number; rows: number; cell: { w: number; h: number } } | null>(null);
 
+  useEffect(() => {
     return () => {
       if (objUrl) URL.revokeObjectURL(objUrl);
-      // data URLs – no revoke needed
-    };
-  }, [objUrl, frames]);
+    return () => {
+      if (objUrl) URL.revokeObjectURL(objUrl);
 
   const onPickFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
