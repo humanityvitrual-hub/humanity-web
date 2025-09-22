@@ -27,7 +27,7 @@ export default function SpinVideoPage() {
   useEffect(() => {
     return () => {
       if (objUrl) URL.revokeObjectURL(objUrl);
-      frames.forEach((u) => URL.revokeObjectURL(u));
+      // data URLs – no revoke needed
     };
   }, [objUrl, frames]);
 
@@ -35,7 +35,7 @@ export default function SpinVideoPage() {
     const f = e.target.files?.[0];
     if (!f) return;
     if (objUrl) URL.revokeObjectURL(objUrl);
-    frames.forEach((u) => URL.revokeObjectURL(u));
+    // data URLs – no revoke needed
     setFrames([]);
     setSprite("");
     setManifest(null);
@@ -91,7 +91,7 @@ export default function SpinVideoPage() {
     setExtracting(true);
     setProgress(0);
 
-    frames.forEach((u) => URL.revokeObjectURL(u));
+    // data URLs – no revoke needed
     const urls: string[] = [];
 
     const dt = duration / N_FRAMES;
@@ -101,11 +101,8 @@ export default function SpinVideoPage() {
       ctx.clearRect(0, 0, c.width, c.height);
       ctx.drawImage(v, sx, sy, side, side, 0, 0, TARGET_SIZE, TARGET_SIZE);
 
-      const blob: Blob = await new Promise((res) =>
-        c.toBlob((b) => res(b as Blob), "image/webp", 0.92)
-      );
-      const url = URL.createObjectURL(blob);
-      urls.push(url);
+      const dataUrl = c.toDataURL("image/webp", 0.92);
+      urls.push(dataUrl);
       setProgress(Math.round(((i + 1) / N_FRAMES) * 100));
       await new Promise((r) => setTimeout(r, 0));
     }
@@ -142,7 +139,7 @@ export default function SpinVideoPage() {
 
   const clearVideo = () => {
     if (objUrl) URL.revokeObjectURL(objUrl);
-    frames.forEach((u) => URL.revokeObjectURL(u));
+    // data URLs – no revoke needed
     setObjUrl("");
     setFrames([]);
     setSprite("");
