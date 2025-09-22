@@ -25,6 +25,9 @@ export default function SpinVideoPage() {
   const [matteProgress, setMatteProgress] = useState(0);
   const sessionRef = useRef<ort.InferenceSession | null>(null);
 
+  // Memoria temporal de máscara (para estabilizar entre frames)
+  const lastMaskRef = useRef<Float32Array | null>(null);
+
   // Limpieza del ObjectURL al cambiar de video o desmontar
   useEffect(() => {
     return () => {
@@ -41,6 +44,8 @@ export default function SpinVideoPage() {
       setCurrent(0);
       setLoaded(false);
       setDuration(0);
+      setMatteProgress(0);
+      lastMaskRef.current = null; // reset memoria temporal
       const url = URL.createObjectURL(f);
       setObjUrl(url);
     } catch (err) {
@@ -75,7 +80,7 @@ export default function SpinVideoPage() {
     if (!v || !c || !duration) return;
 
     try {
-      // “desbloqueo” iOS/Safari: play/pause para permitir dibujar frames
+      // “desbloqueo” iOS/Safari
       try { v.muted = true; await v.play(); v.pause(); } catch {}
 
       const vw = v.videoWidth;
@@ -104,12 +109,11 @@ export default function SpinVideoPage() {
         ctx.clearRect(0, 0, c.width, c.height);
         ctx.drawImage(v, sx, sy, side, side, 0, 0, TARGET_SIZE, TARGET_SIZE);
 
-        // dataURL directo (evita blob: y CORS/fetch issues)
         const dataUrl = c.toDataURL("image/webp", 0.92);
         urls.push(dataUrl);
 
         setProgress(Math.round(((i + 1) / N_FRAMES) * 100));
-        await new Promise((r) => setTimeout(r, 0)); // ceder al UI
+        await new Promise((r) => setTimeout(r, 0));
       }
 
       setFrames(urls);
@@ -122,7 +126,7 @@ export default function SpinVideoPage() {
     }
   }, [duration]);
 
-  // Visor 360 (drag → cambia índice)
+  // Visor 360 (drag)
   const onPointerDown = (ev: React.PointerEvent) => {
     if (!frames.length) return;
     setDragging(true);
@@ -134,7 +138,7 @@ export default function SpinVideoPage() {
   };
   const onPointerMove = (ev: React.PointerEvent) => {
     if (!dragging || !frames.length) return;
-    const SENS = 6; // mayor → menos sensible
+    const SENS = 6;
     const delta = Math.trunc(ev.movementX / SENS);
     if (delta !== 0) {
       setCurrent((i) => {
@@ -148,10 +152,41 @@ export default function SpinVideoPage() {
   const canExtract = useMemo(() => loaded && !!objUrl && !extracting, [loaded, objUrl, extracting]);
 
   // =======================
-  // REMOVE BACKGROUND (beta)
+  // REMOVE BACKGROUND (beta) con SUAVIZADO + HISTÉRESIS
   // =======================
 
-  // Carga del modelo ONNX bajo demanda
+  // Suavizado 3x3 (box blur) en Float32 [0..1]
+  function blur3x3Float(src: Float32Array, w: number, h: number, iters = 1) {
+    let a = src, b = new Float32Array(src.length);
+    const idx = (x: number, y: number) => y * w + x;
+    for (let k = 0; k < iters; k++) {
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          let sum = 0, count = 0;
+          for (let dy = -1; dy <= 1; dy++) {
+            for (let dx = -1; dx <= 1; dx++) {
+              const xx = x + dx, yy = y + dy;
+              if (xx >= 0 && xx < w && yy >= 0 && yy < h) {
+                sum += a[idx(xx, yy)]; count++;
+              }
+            }
+          }
+          b[idx(x, y)] = sum / count;
+        }
+      }
+      // swap
+      const tmp = a; a = b; b = tmp;
+    }
+    return a; // suavizado
+  }
+
+  // Curva tipo smoothstep para endurecer borde con feather
+  const smoothstep = (edge0: number, edge1: number, x: number) => {
+    const t = Math.min(1, Math.max(0, (x - edge0) / (edge1 - edge0)));
+    return t * t * (3 - 2 * t);
+  };
+
+  // Carga del modelo ONNX
   const loadU2Net = useCallback(async () => {
     if (sessionRef.current) return sessionRef.current;
     const session = await ort.InferenceSession.create("/models/u2netp.onnx", {
@@ -190,15 +225,13 @@ export default function SpinVideoPage() {
       const g = data[p++] / 255;
       const b = data[p++] / 255;
       p++; // A
-      chw[i] = r;
-      chw[i + stride] = g;
-      chw[i + stride * 2] = b;
+      chw[i] = r; chw[i + stride] = g; chw[i + stride * 2] = b;
     }
     const tensor = new ort.Tensor("float32", chw, [1, 3, SIZE, SIZE]);
     return { tensor, box: { x, y, w, h, size: SIZE } };
   };
 
-  // Ejecuta U2Netp y devuelve un frame con fondo blanco (solo sujeto)
+  // Ejecuta U2Netp y devuelve un frame con fondo blanco (solo sujeto), con estabilización
   const runMatte = async (dataUrl: string) => {
     const session = await loadU2Net();
     const { tensor, box } = await imageToTensor(dataUrl);
@@ -210,20 +243,41 @@ export default function SpinVideoPage() {
     if (!out) throw new Error("Salida del modelo no encontrada.");
 
     const SIZE = box.size;
-    const mask = (out as ort.Tensor).data as Float32Array; // 1x1x320x320
+    // mask320: Float32 [0..1] tamaño 320x320
+    let mask320 = (out as ort.Tensor).data as Float32Array;
 
-    // Construir máscara RGBA 320x320
+    // 1) Suavizado espacial (reduce "dientes" y huecos)
+    mask320 = blur3x3Float(mask320, SIZE, SIZE, 2);
+
+    // 2) Curva/umbral suave para consolidar primer plano
+    //    - edge0: tolerancia (ruido desaparece)
+    //    - edge1: borde con feather
+    const edge0 = 0.25, edge1 = 0.55;
+    for (let i = 0; i < mask320.length; i++) {
+      mask320[i] = smoothstep(edge0, edge1, mask320[i]);
+    }
+
+    // 3) Histéresis temporal: no perder de golpe lo que era foreground recién
+    const prev = lastMaskRef.current;
+    if (prev && prev.length === mask320.length) {
+      const decay = 0.88; // 88% mantiene “memoria” del frame previo
+      for (let i = 0; i < mask320.length; i++) {
+        const mem = prev[i] * decay;
+        if (mem > mask320[i]) mask320[i] = mem;
+      }
+    }
+    // guarda para el siguiente frame
+    lastMaskRef.current = Float32Array.from(mask320);
+
+    // Construir máscara RGBA 320
     const mcn = document.createElement("canvas");
     mcn.width = SIZE; mcn.height = SIZE;
     const mctx = mcn.getContext("2d", { willReadFrequently: true })!;
     const id = mctx.createImageData(SIZE, SIZE);
     let q = 0;
     for (let i = 0; i < SIZE * SIZE; i++) {
-      const a = Math.max(0, Math.min(255, Math.round(mask[i] * 255)));
-      id.data[q++] = 255; // R
-      id.data[q++] = 255; // G
-      id.data[q++] = 255; // B
-      id.data[q++] = a;   // A
+      const a = Math.max(0, Math.min(255, Math.round(mask320[i] * 255)));
+      id.data[q++] = 255; id.data[q++] = 255; id.data[q++] = 255; id.data[q++] = a;
     }
     mctx.putImageData(id, 0, 0);
 
@@ -237,17 +291,11 @@ export default function SpinVideoPage() {
     const outCn = document.createElement("canvas");
     outCn.width = TARGET_SIZE; outCn.height = TARGET_SIZE;
     const outCx = outCn.getContext("2d", { willReadFrequently: true })!;
+    outCx.fillStyle = "#fff"; outCx.fillRect(0, 0, TARGET_SIZE, TARGET_SIZE);
 
-    // Fondo blanco
-    outCx.fillStyle = "#fff";
-    outCx.fillRect(0, 0, TARGET_SIZE, TARGET_SIZE);
-
-    // Frame original reescalado a TARGET_SIZE (ya venía en ese tamaño)
     const img = new Image();
-    img.src = dataUrl;
-    await img.decode();
+    img.src = dataUrl; await img.decode();
 
-    // Aplicar máscara al frame y pintar
     const fg = document.createElement("canvas");
     fg.width = TARGET_SIZE; fg.height = TARGET_SIZE;
     const fgx = fg.getContext("2d")!;
@@ -269,6 +317,7 @@ export default function SpinVideoPage() {
     try {
       setMatting(true);
       setMatteProgress(0);
+      lastMaskRef.current = null; // reinicia memoria al empezar
       const out: string[] = [];
       for (let i = 0; i < frames.length; i++) {
         const url = await runMatte(frames[i]);
@@ -280,7 +329,7 @@ export default function SpinVideoPage() {
       setCurrent(0);
     } catch (e) {
       console.error(e);
-      alert("Falló la segmentación. Prueba con fondo más contrastado o mejor luz.");
+      alert("Falló la segmentación. Prueba con fondo más contrastante o mejor luz.");
     } finally {
       setMatting(false);
     }
@@ -296,6 +345,7 @@ export default function SpinVideoPage() {
     setProgress(0);
     setCurrent(0);
     setMatteProgress(0);
+    lastMaskRef.current = null;
   };
 
   return (
@@ -332,7 +382,7 @@ export default function SpinVideoPage() {
                 Reset
               </button>
 
-              {/* Remove background (beta) — cliente puro */}
+              {/* Remove background (beta) — con suavizado + histéresis */}
               <button
                 disabled={!frames.length || matting}
                 onClick={removeBackgroundAll}
