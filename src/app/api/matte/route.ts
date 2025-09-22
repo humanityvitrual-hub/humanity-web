@@ -1,50 +1,51 @@
 import { NextRequest, NextResponse } from "next/server";
-const REPLICATE = process.env.REPLICATE_API_TOKEN;
 
-export async function GET() {
-  return NextResponse.json({ ok: !!REPLICATE });
-}
+export const runtime = "nodejs";
 
-type Payload = { frames: string[] };
+type Payload = { frames: string[] }; // data URLs (webp) 640x640
 
-async function removeBg(dataUrl: string) {
-  if (!REPLICATE) throw new Error("Missing REPLICATE_API_TOKEN");
-  const b64 = dataUrl.split(",")[1];
+async function removeBg(dataUrl: string, apiKey: string) {
+  const b64 = dataUrl.split(",")[1] ?? "";
+  const blob = Buffer.from(b64, "base64");
+  const form = new FormData();
+  form.append("image_file", new Blob([blob]), "frame.webp");
+  form.append("size", "auto");        // mantiene tamaño, saca fondo
+  form.append("crop", "false");       // no recorta aquí; normalizamos luego
+  form.append("format", "png");       // necesitamos canal alpha
 
-  const create = await fetch("https://api.replicate.com/v1/predictions", {
+  const res = await fetch("https://api.remove.bg/v1.0/removebg", {
     method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Token ${REPLICATE}` },
-    body: JSON.stringify({ version: "rembg", input: { image: `data:image/webp;base64,${b64}`, background: "transparent" } }),
+    headers: { "X-Api-Key": apiKey },
+    body: form as any,
   });
-  if (!create.ok) throw new Error(await create.text());
-  const created = await create.json();
-  const url = created.urls?.get as string;
 
-  for (let i = 0; i < 60; i++) {
-    const r = await fetch(url, { headers: { Authorization: `Token ${REPLICATE}` } });
-    const j = await r.json();
-    if (j.status === "succeeded" && j.output) {
-      const outUrl = Array.isArray(j.output) ? j.output[0] : j.output;
-      const img = await fetch(outUrl);
-      const buf = Buffer.from(await img.arrayBuffer());
-      return `data:image/png;base64,${buf.toString("base64")}`;
-    }
-    if (j.status === "failed") throw new Error("replicate failed");
-    await new Promise((res) => setTimeout(res, 1000));
+  if (!res.ok) {
+    const txt = await res.text();
+    throw new Error(`remove.bg ${res.status}: ${txt}`);
   }
-  throw new Error("replicate timeout");
+  const out = Buffer.from(await res.arrayBuffer());
+  return `data:image/png;base64,${out.toString("base64")}`;
 }
 
 export async function POST(req: NextRequest) {
   try {
     const { frames } = (await req.json()) as Payload;
-    if (!Array.isArray(frames) || frames.length === 0) {
-      return NextResponse.json({ error: "frames[] required" }, { status: 400 });
+    if (!Array.isArray(frames) || frames.length !== 36) {
+      return NextResponse.json({ error: "need 36 frames" }, { status: 400 });
     }
-    const out: string[] = [];
-    for (const f of frames) out.push(await removeBg(f));
-    return NextResponse.json({ frames: out });
-  } catch (err: any) {
-    return NextResponse.json({ error: String(err?.message || err) }, { status: 500 });
+    const key = process.env.REMOVE_BG_API_KEY;
+    if (!key) return NextResponse.json({ error: "REMOVE_BG_API_KEY missing" }, { status: 500 });
+
+    // procesa en tandas para no golpear rate limit
+    const batch = 6;
+    const result: string[] = [];
+    for (let i = 0; i < frames.length; i += batch) {
+      const chunk = frames.slice(i, i + batch);
+      const done = await Promise.all(chunk.map((f) => removeBg(f, key)));
+      result.push(...done);
+    }
+    return NextResponse.json({ frames: result });
+  } catch (e: any) {
+    return NextResponse.json({ error: String(e?.message ?? e) }, { status: 500 });
   }
 }
