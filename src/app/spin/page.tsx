@@ -24,37 +24,6 @@ export default function SpinVideoPage() {
   const [sprite, setSprite] = useState<string>("");
   const [manifest, setManifest] = useState<{ frames: number; cols: number; rows: number; cell: { w: number; h: number } } | null>(null);
 
-  useEffect(() => {
-  const buildSpriteClient = async () => {
-    if (frames.length !== 36) return;
-    const tile = 6;
-    // Cargar imagenes en memoria
-    const imgs = await Promise.all(frames.map(src => new Promise((res, rej) => {
-      const im = new Image();
-      im.onload = () => res(im);
-      im.onerror = rej;
-      im.src = src;
-    })));
-    const size = Math.min(imgs[0].width, imgs[0].height);
-    const sheetW = size * tile;
-    const sheetH = size * tile;
-    const cnv = document.createElement("canvas");
-    cnv.width = sheetW;
-    cnv.height = sheetH;
-    const ctx2 = cnv.getContext("2d");
-    if(!ctx2) return;
-    // Fondo blanco (look e-commerce)
-    ctx2.fillStyle = "#ffffff";
-    ctx2.fillRect(0, 0, sheetW, sheetH);
-    imgs.forEach((im, i) => {
-      const r = Math.floor(i / tile);
-      const c = i % tile;
-      ctx2.drawImage(im, 0, 0, size, size, c * size, r * size, size, size);
-    });
-    const spriteDataUrl = cnv.toDataURL("image/webp", 0.9);
-    setSprite(spriteDataUrl);
-    setManifest({ frames: 36, cols: tile, rows: tile, cell: { w: size, h: size } });
-  };
     return () => {
       if (objUrl) URL.revokeObjectURL(objUrl);
       // data URLs – no revoke needed
@@ -196,6 +165,36 @@ export default function SpinVideoPage() {
     }
   };
 
+  const buildSpriteClient = async () => {
+    if (frames.length !== 36) return;
+    const tile = 6;
+    // Cargar imagenes en memoria
+    const imgs = await Promise.all(frames.map(src => new Promise((res, rej) => {
+      const im = new Image();
+      im.onload = () => res(im);
+      im.onerror = rej;
+      im.src = src;
+    })));
+    const size = Math.min(imgs[0].width, imgs[0].height);
+    const sheetW = size * tile;
+    const sheetH = size * tile;
+    const cnv = document.createElement("canvas");
+    cnv.width = sheetW;
+    cnv.height = sheetH;
+    const ctx2 = cnv.getContext("2d");
+    if(!ctx2) return;
+    // Fondo blanco (look e-commerce)
+    ctx2.fillStyle = "#ffffff";
+    ctx2.fillRect(0, 0, sheetW, sheetH);
+    imgs.forEach((im, i) => {
+      const r = Math.floor(i / tile);
+      const c = i % tile;
+      ctx2.drawImage(im, 0, 0, size, size, c * size, r * size, size, size);
+    });
+    const spriteDataUrl = cnv.toDataURL("image/webp", 0.9);
+    setSprite(spriteDataUrl);
+    setManifest({ frames: 36, cols: tile, rows: tile, cell: { w: size, h: size } });
+  };
   return (
     <main className="min-h-screen bg-gradient-to-b from-slate-50 to-white text-slate-900 p-6">
       <div className="max-w-6xl mx-auto pt-10">
