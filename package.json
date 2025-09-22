@@ -16,6 +16,8 @@
     "clsx": "^2.1.1",
     "firebase": "^12.2.1",
     "framer-motion": "^12.23.12",
+    "js-cloudimage-360-view": "^4.0.0",
+    "jszip": "^3.10.1",
     "maath": "^0.10.8",
     "next": "15.5.2",
     "postprocessing": "^6.37.8",
