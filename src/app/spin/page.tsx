@@ -1,21 +1,14 @@
 "use client";
-
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-/**
- * /spin
- * 1) Carga un video local
- * 2) Extrae N fotogramas igualmente espaciados (por defecto 36)
- * 3) Muestra visor 360 (arrastrar para rotar)
- */
 export default function SpinVideoPage() {
   const N_FRAMES = 36;
-  const TARGET_SIZE = 640; // tamaño cuadrado final (px)
+  const TARGET_SIZE = 640;
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  const [objUrl, setObjUrl] = useState<string>("");
+  const [objUrl, setObjUrl] = useState("");
   const [loaded, setLoaded] = useState(false);
   const [duration, setDuration] = useState(0);
 
@@ -25,7 +18,6 @@ export default function SpinVideoPage() {
   const [current, setCurrent] = useState(0);
   const [dragging, setDragging] = useState(false);
 
-  // limpiar URLs cuando cambie video/frames
   useEffect(() => {
     return () => {
       if (objUrl) URL.revokeObjectURL(objUrl);
@@ -69,16 +61,9 @@ export default function SpinVideoPage() {
     const c = canvasRef.current;
     if (!v || !c || !duration) return;
 
-    // asegurar reproducción para desbloquear en iOS
-    try {
-      v.muted = true;
-      await v.play();
-      v.pause();
-    } catch {}
+    try { v.muted = true; await v.play(); v.pause(); } catch {}
 
-    // calcular recorte cuadrado desde el centro
-    const vw = v.videoWidth;
-    const vh = v.videoHeight;
+    const vw = v.videoWidth, vh = v.videoHeight;
     if (!vw || !vh) return;
 
     const side = Math.min(vw, vh);
@@ -93,25 +78,20 @@ export default function SpinVideoPage() {
     setExtracting(true);
     setProgress(0);
 
-    // limpiar frames previos
     frames.forEach((u) => URL.revokeObjectURL(u));
     const urls: string[] = [];
 
     const dt = duration / N_FRAMES;
     for (let i = 0; i < N_FRAMES; i++) {
-      const t = i * dt;
-      await seekTo(v, t);
+      await seekTo(v, i * dt);
       ctx.clearRect(0, 0, c.width, c.height);
       ctx.drawImage(v, sx, sy, side, side, 0, 0, TARGET_SIZE, TARGET_SIZE);
-
-      // WEBP (mejor tamaño), si no soporta webp puedes cambiar a "image/jpeg"
       const blob: Blob = await new Promise((res) =>
         c.toBlob((b) => res(b as Blob), "image/webp", 0.92)
       );
       const url = URL.createObjectURL(blob);
       urls.push(url);
       setProgress(Math.round(((i + 1) / N_FRAMES) * 100));
-      // ceder un micro-turno al event loop
       await new Promise((r) => setTimeout(r, 0));
     }
 
@@ -120,26 +100,22 @@ export default function SpinVideoPage() {
     setExtracting(false);
   }, [duration, frames]);
 
-  // VISOR 360 ---------------------------------------------------------------
   const onPointerDown = (ev: React.PointerEvent) => {
     if (!frames.length) return;
     setDragging(true);
     (ev.target as HTMLElement).setPointerCapture?.(ev.pointerId);
   };
-
   const onPointerUp = (ev: React.PointerEvent) => {
     setDragging(false);
     (ev.target as HTMLElement).releasePointerCapture?.(ev.pointerId);
   };
-
   const onPointerMove = (ev: React.PointerEvent) => {
     if (!dragging || !frames.length) return;
-    // sensibilidad: cuantos px para cambiar 1 frame (ajustable)
     const SENS = 6;
     const delta = Math.trunc(ev.movementX / SENS);
     if (delta !== 0) {
       setCurrent((i) => {
-        let n = (i - delta) % frames.length; // negativo rota al otro sentido
+        let n = (i - delta) % frames.length;
         if (n < 0) n += frames.length;
         return n;
       });
@@ -200,9 +176,7 @@ export default function SpinVideoPage() {
           ) : null}
         </div>
 
-        {/* Zona de previsualización */}
         <div className="mt-6 grid md:grid-cols-2 gap-6">
-          {/* Video / Entrada */}
           <div className="rounded-xl border bg-white/70 backdrop-blur p-3 shadow">
             {!objUrl ? (
               <div className="aspect-video grid place-items-center text-slate-500">
@@ -223,17 +197,13 @@ export default function SpinVideoPage() {
             {extracting && (
               <div className="mt-3">
                 <div className="h-2 bg-slate-200 rounded">
-                  <div
-                    className="h-2 bg-slate-800 rounded transition-all"
-                    style={{ width: `${progress}%` }}
-                  />
+                  <div className="h-2 bg-slate-800 rounded transition-all" style={{ width: `${progress}%` }} />
                 </div>
                 <p className="text-xs mt-2 text-slate-500">Extracting frames… {progress}%</p>
               </div>
             )}
           </div>
 
-          {/* Visor 360 */}
           <div className="rounded-xl border bg-white/70 backdrop-blur p-3 shadow">
             {!frames.length ? (
               <div className="aspect-square grid place-items-center text-slate-500">
@@ -247,12 +217,7 @@ export default function SpinVideoPage() {
                 onPointerCancel={onPointerUp}
                 onPointerMove={onPointerMove}
               >
-                <img
-                  src={frames[current]}
-                  alt={`frame-${current}`}
-                  draggable={false}
-                  className="w-full h-auto rounded-lg"
-                />
+                <img src={frames[current]} alt={`frame-${current}`} draggable={false} className="w-full h-auto rounded-lg" />
                 <div className="text-center mt-2 text-xs text-slate-500">
                   Drag horizontally to rotate • {current + 1}/{frames.length}
                 </div>
@@ -261,7 +226,6 @@ export default function SpinVideoPage() {
           </div>
         </div>
 
-        {/* canvas oculto para extraer frames */}
         <canvas ref={canvasRef} className="hidden" />
       </div>
     </main>
