@@ -1,84 +1,64 @@
 import { NextRequest, NextResponse } from "next/server";
 
-type Payload = { frames: string[]; format?: "webp"|"png" };
-const REPLICATE_TOKEN = process.env.REPLICATE_API_TOKEN!;
+type Payload = { frames: string[] };
 
-/**
- * POST /api/matte
- * body: { frames: dataURL[36], format?: "webp"|"png" }
- * resp: { frames: dataURL[] }  // mismas imágenes con fondo removido
- */
+const REPLICATE = process.env.REPLICATE_API_TOKEN;
+
+async function removeBg(dataUrl: string) {
+  if (!REPLICATE) throw new Error("Missing REPLICATE_API_TOKEN");
+  const b64 = dataUrl.split(",")[1];
+
+  // Crear predicción
+  const create = await fetch("https://api.replicate.com/v1/predictions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Token ${REPLICATE}`,
+    },
+    body: JSON.stringify({
+      // rembg
+      version: "rembg",
+      input: {
+        image: `data:image/webp;base64,${b64}`,
+        background: "transparent",
+      },
+    }),
+  });
+  if (!create.ok) throw new Error(await create.text());
+  const created = await create.json();
+  const url = created.urls?.get as string;
+
+  // Polling sencillo
+  for (let i = 0; i < 60; i++) {
+    const r = await fetch(url, { headers: { Authorization: `Token ${REPLICATE}` } });
+    const j = await r.json();
+    if (j.status === "succeeded" && j.output) {
+      const outUrl = Array.isArray(j.output) ? j.output[0] : j.output;
+      const img = await fetch(outUrl);
+      const buf = Buffer.from(await img.arrayBuffer());
+      return `data:image/png;base64,${buf.toString("base64")}`;
+    }
+    if (j.status === "failed") throw new Error("replicate failed");
+    await new Promise((res) => setTimeout(res, 1000));
+  }
+  throw new Error("replicate timeout");
+}
+
 export async function POST(req: NextRequest) {
   try {
-    if (!REPLICATE_TOKEN) {
-      return NextResponse.json({ error: "Missing REPLICATE_API_TOKEN" }, { status: 500 });
-    }
-    const { frames, format = "webp" } = (await req.json()) as Payload;
+    const { frames } = (await req.json()) as Payload;
     if (!Array.isArray(frames) || frames.length === 0) {
       return NextResponse.json({ error: "frames[] required" }, { status: 400 });
     }
 
-    // Utilizamos el endpoint de predicciones de Replicate para el modelo rembg
-    // Documentación: https://replicate.com (REST /v1/predictions)
-    const results: string[] = [];
-
-    for (const dataUrl of frames) {
-      // Convertimos dataURL a blob base64 "image/*"
-      const b64 = dataUrl.split(",")[1];
-      const input = {
-        image: `data:image/webp;base64,${b64}`,
-        // El modelo admite transparent background
-        background: "transparent"
-      };
-
-      const create = await fetch("https://api.replicate.com/v1/predictions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Token ${REPLICATE_TOKEN}`,
-        },
-        body: JSON.stringify({
-          version: "rembg", // alias soportado por Replicate para background removal
-          input,
-        }),
-      });
-
-      if (!create.ok) {
-        const t = await create.text();
-        throw new Error(`replicate create failed: ${t}`);
-      }
-      const created = await create.json();
-      const url = created.urls?.get as string;
-
-      // Polling hasta terminar
-      let output: string | null = null;
-      for (let i = 0; i < 60; i++) {
-        const r = await fetch(url, {
-          headers: { Authorization: `Token ${REPLICATE_TOKEN}` },
-        });
-        const j = await r.json();
-        if (j.status === "succeeded" && j.output) {
-          // j.output puede ser una URL; la descargamos y re-emitimos como dataURL
-          const outUrl = Array.isArray(j.output) ? j.output[0] : j.output;
-          const imgResp = await fetch(outUrl);
-          const buf = Buffer.from(await imgResp.arrayBuffer());
-          const mime = format === "png" ? "image/png" : "image/webp";
-          const outDataUrl = `data:${mime};base64,${buf.toString("base64")}`;
-          output = outDataUrl;
-          break;
-        }
-        if (j.status === "failed" || j.status === "canceled") {
-          throw new Error(`replicate status: ${j.status}`);
-        }
-        await new Promise((r) => setTimeout(r, 1000));
-      }
-
-      if (!output) throw new Error("replicate timeout");
-      results.push(output);
+    const result: string[] = [];
+    // (Puedes paralelizar si quieres, pero con 36 frames esto está bien para MVP)
+    for (const f of frames) {
+      result.push(await removeBg(f));
     }
 
-    return NextResponse.json({ frames: results });
-  } catch (e: any) {
-    return NextResponse.json({ error: String(e?.message || e) }, { status: 500 });
+    return NextResponse.json({ frames: result });
+  } catch (err: any) {
+    return NextResponse.json({ error: String(err?.message || err) }, { status: 500 });
   }
 }
