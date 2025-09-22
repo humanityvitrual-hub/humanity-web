@@ -1,5 +1,4 @@
 import { useState } from "react";
-
 const U = process.env.NEXT_PUBLIC_PROCESSOR_URL || "";
 
 export default function SpinPage() {
@@ -23,18 +22,17 @@ export default function SpinPage() {
   async function onChange(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0];
     if (!f) return;
-    if (!U) { setErr("NEXT_PUBLIC_PROCESSOR_URL NO está definida en este preview"); return; }
+    if (!U) { setErr("NEXT_PUBLIC_PROCESSOR_URL no está definida en este preview"); return; }
     setErr(null); setSprite(null); setMeta(null); setLoading(true);
 
     try {
       const fd = new FormData(); fd.append("file", f);
       const r = await fetch(`${U}/process`, { method: "POST", body: fd });
-      const text = await r.text(); // <-- lee texto para ver qué llega exactamente
+      const text = await r.text(); // lee crudo para ver exactamente qué llega
       let data: any = {};
-      try { data = JSON.parse(text); } catch { data = { raw: text.slice(0, 300) + "…" }; }
-      console.log("PROCESS RESP:", { status: r.status, data });
+      try { data = JSON.parse(text); } catch { data = { raw: text.slice(0, 500) + "…" }; }
       setLoading(false);
-      if (!r.ok || !data?.ok) { setErr(`status=${r.status} data=${JSON.stringify(data).slice(0,500)}`); return; }
+      if (!r.ok || !data?.ok) { setErr(`status=${r.status}\n${JSON.stringify(data).slice(0,1000)}`); return; }
       setSprite(data.spriteDataUrl); setMeta(data.metadata);
     } catch (e:any) {
       setLoading(false);
@@ -44,9 +42,8 @@ export default function SpinPage() {
 
   return (
     <main style={{ minHeight: "100vh", padding: 24 }}>
-      <h1 style={{ fontWeight: 700, fontSize: 24, marginBottom: 8 }}>Create a 360 product from a video</h1>
+      <h1 style={{ fontWeight: 700, fontSize: 24, marginBottom: 8 }}>Create a 360 product from a video (DIAG)</h1>
       <p style={{ opacity: 0.7, marginBottom: 16 }}>
-        Direct upload → processor (CORS).<br/>
         <b>Processor URL:</b> <code>{U || "(vacía)"}</code>
       </p>
 
@@ -56,7 +53,7 @@ export default function SpinPage() {
       </div>
 
       <input type="file" accept="video/*" onChange={onChange} />
-      {loading && <div style={{ marginTop: 12 }}>Processing… (mira Console/Network si tarda)</div>}
+      {loading && <div style={{ marginTop: 12 }}>Processing… (revisa Network si tarda)</div>}
       {err && <pre style={{ color: "crimson", fontSize: 12, whiteSpace: "pre-wrap", marginTop: 12 }}>{err}</pre>}
       {sprite && (
         <div style={{ marginTop: 16 }}>
