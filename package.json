@@ -20,6 +20,7 @@
     "jszip": "^3.10.1",
     "maath": "^0.10.8",
     "next": "15.5.2",
+    "onnxruntime-web": "^1.22.0",
     "postprocessing": "^6.37.8",
     "react": "19.1.0",
     "react-dom": "19.1.0",
