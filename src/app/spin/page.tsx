@@ -189,6 +189,7 @@ export default function SpinVideoPage() {
       });
 
       const spriteDataUrl = cnv.toDataURL("image/webp", 0.9);
+      console.log("SPRITE_BUILT",{tile, size, sheetW, sheetH, urlLen: spriteDataUrl.length});
       setSprite(spriteDataUrl);
       setManifest({ frames: 36, cols: tile, rows: tile, cell: { w: size, h: size } });
     } finally {
@@ -285,7 +286,11 @@ export default function SpinVideoPage() {
                 <p>When frames are ready, the viewer appears here.</p>
               </div>
             ) : sprite ? (
+              <div>
               <Sprite360 src={sprite} manifest={manifest!} />
+              <div className="mt-2 text-xs text-slate-600">debug → frames: {manifest?.frames} • grid: {manifest?.cols}×{manifest?.rows} • cell: {manifest?.cell.w}×{manifest?.cell.h}</div>
+              <img src={sprite} alt="sprite raw" className="mt-2 w-full border rounded" />
+            </div>
             ) : (
               <div
                 className="select-none touch-none"
