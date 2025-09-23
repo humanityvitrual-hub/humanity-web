@@ -20,11 +20,17 @@ export default function SpinVideoPage() {
   const [current, setCurrent] = useState(0);
   const [dragging, setDragging] = useState(false);
 
-  // Matting
+  // Matting + estabilidad
   const [matting, setMatting] = useState(false);
   const [matteProgress, setMatteProgress] = useState(0);
   const sessionRef = useRef<ort.InferenceSession | null>(null);
   const lastMaskRef = useRef<Float32Array | null>(null);
+
+  // Fondo en LAB (estimado del primer frame)
+  const bgLabRef = useRef<{L:number;a:number;b:number; sigma:number} | null>(null);
+
+  // Normalización global de tamaño (bbox target)
+  const normRef = useRef<{maxW:number; maxH:number} | null>(null);
 
   useEffect(() => {
     return () => { if (objUrl) URL.revokeObjectURL(objUrl); };
@@ -35,8 +41,11 @@ export default function SpinVideoPage() {
       const f = e.target.files?.[0];
       if (!f) return;
       if (objUrl) URL.revokeObjectURL(objUrl);
-      setFrames([]); setCurrent(0); setLoaded(false); setDuration(0); setMatteProgress(0);
+      setFrames([]); setCurrent(0); setLoaded(false); setDuration(0);
+      setMatteProgress(0);
       lastMaskRef.current = null;
+      bgLabRef.current = null;
+      normRef.current = null;
       const url = URL.createObjectURL(f);
       setObjUrl(url);
     } catch (err) {
@@ -97,6 +106,7 @@ export default function SpinVideoPage() {
     }
   }, [duration]);
 
+  // Visor 360 (drag)
   const onPointerDown = (ev: React.PointerEvent) => {
     if (!frames.length) return;
     setDragging(true);
@@ -121,7 +131,7 @@ export default function SpinVideoPage() {
 
   const canExtract = useMemo(() => loaded && !!objUrl && !extracting, [loaded, objUrl, extracting]);
 
-  // ===== Utilidades de máscara =====
+  // ========= Utilidades de máscara =========
   function blur3x3Float(src: Float32Array, w: number, h: number, iters = 1) {
     let a = src, b = new Float32Array(src.length);
     const idx = (x: number, y: number) => y * w + x;
@@ -146,7 +156,6 @@ export default function SpinVideoPage() {
     const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0)));
     return t * t * (3 - 2 * t);
   };
-  // morfología: dilatación y erosión 3x3 en Float32
   function dilate3x3(src: Float32Array, w: number, h: number) {
     const dst = new Float32Array(src.length);
     const idx = (x: number, y: number) => y * w + x;
@@ -173,8 +182,69 @@ export default function SpinVideoPage() {
     }
     return dst;
   }
+  // conexas: nos quedamos con la región mayor (>0.5)
+  function largestComponent(src: Float32Array, w: number, h: number, thr=0.5) {
+    const N = w*h;
+    const visited = new Uint8Array(N);
+    const idx = (x:number,y:number)=> y*w + x;
+    let bestSize = 0;
+    let bestMask = new Float32Array(N);
+    const stackX:number[] = [], stackY:number[] = [];
+    for (let y=0;y<h;y++) for (let x=0;x<w;x++) {
+      const i = idx(x,y);
+      if (visited[i] || src[i] < thr) continue;
+      // flood fill
+      let size = 0;
+      const curMask = new Float32Array(N);
+      stackX.length=0; stackY.length=0; stackX.push(x); stackY.push(y);
+      visited[i]=1;
+      while (stackX.length) {
+        const cx = stackX.pop()!, cy = stackY.pop()!;
+        const ci = idx(cx,cy);
+        curMask[ci] = src[ci];
+        size++;
+        for (let dy=-1; dy<=1; dy++) for (let dx=-1; dx<=1; dx++) {
+          if (dx===0 && dy===0) continue;
+          const nx=cx+dx, ny=cy+dy;
+          if (nx<0||nx>=w||ny<0||ny>=h) continue;
+          const ni = idx(nx,ny);
+          if (!visited[ni] && src[ni] >= thr) {
+            visited[ni]=1; stackX.push(nx); stackY.push(ny);
+          }
+        }
+      }
+      if (size > bestSize) { bestSize = size; bestMask = curMask; }
+    }
+    return bestMask;
+  }
 
-  // ===== Modelo + preprocesado =====
+  // ========= Color: RGB -> LAB y deltaE =========
+  function rgb2xyz(r:number,g:number,b:number) {
+    r/=255; g/=255; b/=255;
+    // sRGB compand
+    r = r>0.04045 ? Math.pow((r+0.055)/1.055,2.4):r/12.92;
+    g = g>0.04045 ? Math.pow((g+0.055)/1.055,2.4):g/12.92;
+    b = b>0.04045 ? Math.pow((b+0.055)/1.055,2.4):b/12.92;
+    const x = (r*0.4124 + g*0.3576 + b*0.1805)/0.95047;
+    const y = (r*0.2126 + g*0.7152 + b*0.0722)/1.00000;
+    const z = (r*0.0193 + g*0.1192 + b*0.9505)/1.08883;
+    return {x,y,z};
+  }
+  function xyz2lab(x:number,y:number,z:number) {
+    const f=(t:number)=> t>0.008856? Math.cbrt(t):(7.787*t+16/116);
+    const fx=f(x), fy=f(y), fz=f(z);
+    return { L:116*fy-16, a:500*(fx-fy), b:200*(fy-fz) };
+  }
+  function rgb2lab(r:number,g:number,b:number){
+    const {x,y,z}=rgb2xyz(r,g,b);
+    return xyz2lab(x,y,z);
+  }
+  function deltaE(a:{L:number;a:number;b:number}, b:{L:number;a:number;b:number}){
+    const dL=a.L-b.L, da=a.a-b.a, db=a.b-b.b;
+    return Math.sqrt(dL*dL+da*da+db*db);
+  }
+
+  // ========= Modelo =========
   const loadU2Net = useCallback(async () => {
     if (sessionRef.current) return sessionRef.current;
     const session = await ort.InferenceSession.create("/models/u2netp.onnx", { executionProviders: ["wasm"] });
@@ -182,7 +252,7 @@ export default function SpinVideoPage() {
     return session;
   }, []);
 
-  // Genera tensor 1x3x320x320 y devuelve también letterbox box y RGBA 320x320 para análisis
+  // Prepara entrada 320x320 + letterbox y devuelve RGBA para análisis
   const prepareInput = async (dataUrl: string) => {
     const img = new Image(); img.src = dataUrl; await img.decode();
     const SIZE = 320;
@@ -194,6 +264,7 @@ export default function SpinVideoPage() {
     const x = Math.floor((SIZE - w) / 2), y = Math.floor((SIZE - h) / 2);
     cx.drawImage(img, x, y, w, h);
     const rgba = cx.getImageData(0, 0, SIZE, SIZE);
+
     const chw = new Float32Array(1 * 3 * SIZE * SIZE);
     const stride = SIZE * SIZE;
     for (let i = 0, p = 0; i < SIZE * SIZE; i++) {
@@ -204,68 +275,65 @@ export default function SpinVideoPage() {
     return { tensor, box: { x, y, w, h, size: SIZE }, rgba };
   };
 
-  // Estima color de fondo a partir de los bordes del frame 320x320
-  function estimateBackground(rgba: ImageData, box: {x:number,y:number,w:number,h:number,size:number}) {
-    const { data, width: W, height: H } = rgba as any as { data: Uint8ClampedArray, width: number, height: number };
-    // tomamos un borde de 10px alrededor dentro del área válida (evitar letterbox negro)
+  // Estima el fondo en LAB a partir de los bordes del primer frame
+  function estimateBgLab(rgba: ImageData, box: {x:number;y:number;w:number;h:number;size:number}) {
+    const W = rgba.width, H = rgba.height, data = rgba.data;
     const pad = 10;
     const x0 = Math.max(0, box.x), y0 = Math.max(0, box.y);
     const x1 = Math.min(W, box.x + box.w), y1 = Math.min(H, box.y + box.h);
-    let sumR = 0, sumG = 0, sumB = 0, n = 0;
-    const idx = (x:number,y:number)=> (y*W + x) * 4;
-    for (let y = y0; y < y1; y++) {
-      for (let x = x0; x < x1; x++) {
-        const onBorder = (x - x0 < pad) || (y - y0 < pad) || (x1 - 1 - x < pad) || (y1 - 1 - y < pad);
-        if (!onBorder) continue;
-        const p = idx(x,y);
-        sumR += data[p]; sumG += data[p+1]; sumB += data[p+2]; n++;
+    let sumL=0,sumA=0,sumB=0,n=0;
+    const idx=(x:number,y:number)=> (y*W + x)*4;
+    for(let y=y0;y<y1;y++){
+      for(let x=x0;x<x1;x++){
+        const onBorder=(x-x0<pad)||(y-y0<pad)||(x1-1-x<pad)||(y1-1-y<pad);
+        if(!onBorder) continue;
+        const p=idx(x,y); const lab=rgb2lab(data[p],data[p+1],data[p+2]);
+        sumL+=lab.L; sumA+=lab.a; sumB+=lab.b; n++;
       }
     }
-    if (n === 0) return { r: 255, g: 255, b: 255, sigma: 1 };
-    const meanR = sumR / n, meanG = sumG / n, meanB = sumB / n;
-    // varianza aprox (muestreo cada 4 px para ahorrar)
-    let varR = 0, varG = 0, varB = 0, m = 0;
-    for (let y = y0; y < y1; y+=4) {
-      for (let x = x0; x < x1; x+=4) {
-        const onBorder = (x - x0 < pad) || (y - y0 < pad) || (x1 - 1 - x < pad) || (y1 - 1 - y < pad);
-        if (!onBorder) continue;
-        const p = idx(x,y);
-        const dr = data[p]-meanR, dg = data[p+1]-meanG, db = data[p+2]-meanB;
-        varR += dr*dr; varG += dg*dg; varB += db*db; m++;
+    const mean={L:sumL/Math.max(1,n), a:sumA/Math.max(1,n), b:sumB/Math.max(1,n)};
+    // sigma aprox
+    let varSum=0,m=0;
+    for(let y=y0;y<y1;y+=4){
+      for(let x=x0;x<x1;x+=4){
+        const onBorder=(x-x0<pad)||(y-y0<pad)||(x1-1-x<pad)||(y1-1-y<pad);
+        if(!onBorder) continue;
+        const p=idx(x,y); const lab=rgb2lab(data[p],data[p+1],data[p+2]);
+        const d=deltaE(lab,mean); varSum+=d*d; m++;
       }
     }
-    const sigma = Math.sqrt(((varR+varG+varB)/Math.max(1,m)))/255; // normalizada 0..1
-    return { r: meanR, g: meanG, b: meanB, sigma: Math.max(0.05, Math.min(0.5, sigma)) };
+    const sigma = Math.sqrt(varSum/Math.max(1,m)); // deltaE típico
+    return { ...mean, sigma: Math.max(2, Math.min(20, sigma)) }; // en dE*
   }
 
-  // Crea una “asistencia” de primer plano basada en distancia de color al fondo (0..1)
-  function foregroundAssistFromBg(rgba: ImageData, box: {x:number,y:number,w:number,h:number,size:number}, bg:{r:number,g:number,b:number,sigma:number}) {
-    const { data, width: W, height: H } = rgba as any as { data: Uint8ClampedArray, width: number, height: number };
+  // Probabilidad de primer plano basada en distancia LAB al fondo
+  function fgProbFromBgLAB(rgba: ImageData, box: {x:number;y:number;w:number;h:number;size:number}, bg:{L:number;a:number;b:number;sigma:number}) {
+    const W = rgba.width, H = rgba.height, data = rgba.data;
     const SIZE = box.size;
     const out = new Float32Array(SIZE*SIZE);
-    const idx = (x:number,y:number)=> (y*W + x) * 4;
-    const normFactor = (bg.sigma*3 + 1e-6); // 3 sigmas ~ 99.7%
-    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-      const i = y*W + x;
-      // fuera del rect válido (letterbox) → 0
-      if (x < box.x || x >= box.x + box.w || y < box.y || y >= box.y + box.h) { out[i] = 0; continue; }
-      const p = idx(x,y);
-      const dr = (data[p]   - bg.r) / 255;
-      const dg = (data[p+1] - bg.g) / 255;
-      const db = (data[p+2] - bg.b) / 255;
-      const dist = Math.sqrt(dr*dr + dg*dg + db*db);
-      let val = dist / normFactor; // más lejos del fondo => mayor prob. de ser foreground
-      if (val > 1) val = 1;
-      if (val < 0) val = 0;
-      out[i] = val;
+    const idx=(x:number,y:number)=> (y*W + x)*4;
+    const norm = (bg.sigma*2.5 + 1e-3); // 2.5σ ≈ zona de fondo
+    for (let y=0;y<H;y++) for(let x=0;x<W;x++){
+      const i=y*W+x;
+      if (x<box.x || x>=box.x+box.w || y<box.y || y>=box.y+box.h) { out[i]=0; continue; }
+      const p=idx(x,y); const lab=rgb2lab(data[p],data[p+1],data[p+2]);
+      let d = deltaE(lab, {L:bg.L,a:bg.a,b:bg.b})/norm; // 0..~∞
+      if (d>1) d=1; if (d<0) d=0;
+      out[i]=d;
     }
     return out;
   }
 
-  // Matting por frame
-  const runMatte = async (dataUrl: string) => {
+  // Ejecuta un frame → dataURL sin fondo (blanco), con LAB + conexas + normalización
+  const runMatte = async (dataUrl: string, isFirst:boolean) => {
     const session = await loadU2Net();
     const { tensor, box, rgba } = await prepareInput(dataUrl);
+
+    // Si es el primer frame, estimamos el fondo LAB
+    if (isFirst || !bgLabRef.current) {
+      bgLabRef.current = estimateBgLab(rgba, box);
+    }
+    const bg = bgLabRef.current!;
 
     // Inferencia
     const feeds: Record<string, ort.Tensor> = {};
@@ -274,68 +342,104 @@ export default function SpinVideoPage() {
     const output = await session.run(feeds);
     const out = output[session.outputNames[0]];
     if (!out) throw new Error("Salida del modelo no encontrada.");
-
     const SIZE = box.size;
-    let mask320 = (out as ort.Tensor).data as Float32Array; // 320x320 [0..1]
 
-    // === Background assist: reforzar separación usando color de fondo de bordes ===
-    const bg = estimateBackground(rgba, box);
-    const fgAssist = foregroundAssistFromBg(rgba, box, bg);
-    // combinamos (priorizamos el modelo, pero reforzamos con color)
-    for (let i = 0; i < mask320.length; i++) {
-      mask320[i] = Math.max(mask320[i], fgAssist[i] * 0.9);
-    }
+    // Máscara del modelo
+    let mask = (out as ort.Tensor).data as Float32Array; // [0..1] 320x320
 
-    // Suavizado + borde suave
-    mask320 = blur3x3Float(mask320, SIZE, SIZE, 2);
-    const edge0 = 0.22, edge1 = 0.5;
-    for (let i = 0; i < mask320.length; i++) mask320[i] = smoothstep(edge0, edge1, mask320[i]);
+    // Apoyo por color LAB (fondo)
+    const labAssist = fgProbFromBgLAB(rgba, box, bg);
+    for (let i=0;i<mask.length;i++) mask[i] = Math.max(mask[i], labAssist[i]*0.95);
 
-    // Morfología “closing” (dilatar luego erosionar) para cerrar agujeros pequeños
-    mask320 = dilate3x3(mask320, SIZE, SIZE);
-    mask320 = erode3x3(mask320, SIZE, SIZE);
+    // Suavizado + curva (bordes)
+    mask = blur3x3Float(mask, SIZE, SIZE, 2);
+    const edge0=0.22, edge1=0.5;
+    for (let i=0;i<mask.length;i++) mask[i] = smoothstep(edge0, edge1, mask[i]);
 
-    // Histéresis temporal (memoria)
+    // Closing morfológico
+    mask = dilate3x3(mask, SIZE, SIZE);
+    mask = erode3x3(mask, SIZE, SIZE);
+
+    // Histéresis temporal
     const prev = lastMaskRef.current;
-    if (prev && prev.length === mask320.length) {
-      const decay = 0.90; // memoria un poco más fuerte
-      for (let i = 0; i < mask320.length; i++) {
-        const mem = prev[i] * decay;
-        if (mem > mask320[i]) mask320[i] = mem;
+    if (prev && prev.length === mask.length) {
+      const decay = 0.90;
+      for (let i=0;i<mask.length;i++) {
+        const mem = prev[i]*decay;
+        if (mem > mask[i]) mask[i]=mem;
       }
     }
-    lastMaskRef.current = Float32Array.from(mask320);
+    lastMaskRef.current = Float32Array.from(mask);
 
-    // Construir máscara RGBA 320
+    // Componente conexa mayor
+    const main = largestComponent(mask, SIZE, SIZE, 0.5);
+
+    // BBox del sujeto en 320
+    let minx=SIZE, miny=SIZE, maxx=0, maxy=0, any=false;
+    for (let y=0;y<SIZE;y++) for (let x=0;x<SIZE;x++){
+      const v = main[y*SIZE+x];
+      if (v>0) { any=true; if (x<minx)minx=x; if (x>maxx)maxx=x; if (y<miny)miny=y; if (y>maxy)maxy=y; }
+    }
+    if (!any) { // fallback: usar la del modelo sin conexas
+      minx=0;miny=0;maxx=SIZE-1;maxy=SIZE-1;
+    }
+    const bw = Math.max(1, maxx-minx+1), bh = Math.max(1, maxy-miny+1);
+    // Normalización global: guardamos el tamaño más grande para homogeneizar
+    if (!normRef.current) normRef.current = {maxW:bw, maxH:bh};
+    normRef.current.maxW = Math.max(normRef.current.maxW, bw);
+    normRef.current.maxH = Math.max(normRef.current.maxH, bh);
+
+    // Construir máscara RGBA 320 del main con feather extra
     const mcn = document.createElement("canvas"); mcn.width = SIZE; mcn.height = SIZE;
     const mctx = mcn.getContext("2d", { willReadFrequently: true })!;
     const id = mctx.createImageData(SIZE, SIZE);
-    for (let i = 0, q = 0; i < SIZE * SIZE; i++) {
-      const a = Math.max(0, Math.min(255, Math.round(mask320[i] * 255)));
-      id.data[q++] = 255; id.data[q++] = 255; id.data[q++] = 255; id.data[q++] = a;
+    for (let i=0, q=0;i<SIZE*SIZE;i++){
+      // feather: remapeo leve 0.45..1.0 → 0..1
+      let a = main[i];
+      if (a<0.45) a=0; else a = (a-0.45)/0.55;
+      const A = Math.max(0, Math.min(255, Math.round(a*255)));
+      id.data[q++]=255; id.data[q++]=255; id.data[q++]=255; id.data[q++]=A;
     }
     mctx.putImageData(id, 0, 0);
 
-    // Escalar máscara (quitando letterbox) a TARGET_SIZE
-    const maskFinal = document.createElement("canvas"); maskFinal.width = TARGET_SIZE; maskFinal.height = TARGET_SIZE;
-    const mfx = maskFinal.getContext("2d")!;
-    mfx.drawImage(mcn, box.x, box.y, box.w, box.h, 0, 0, TARGET_SIZE, TARGET_SIZE);
+    // Escalar la máscara recortando al bbox, y luego ajustarla a un tamaño global consistente
+    const maskBoxed = document.createElement("canvas");
+    const targetW = normRef.current.maxW, targetH = normRef.current.maxH;
+    // escalamos bbox al TARGET_SIZE manteniendo cuadrado final
+    const boxCanvas = document.createElement("canvas");
+    boxCanvas.width = bw; boxCanvas.height = bh;
+    const bctx = boxCanvas.getContext("2d")!;
+    bctx.drawImage(mcn, minx, miny, bw, bh, 0, 0, bw, bh);
 
-    // Componer sobre blanco
+    // Ahora llevamos este recorte al tamaño deseado dentro del canvas final
+    maskBoxed.width = TARGET_SIZE; maskBoxed.height = TARGET_SIZE;
+    const mbx = maskBoxed.getContext("2d")!;
+    mbx.clearRect(0,0,TARGET_SIZE,TARGET_SIZE);
+    // destino: ocupamos el porcentaje del lienzo en función del tamaño global
+    const scale = Math.min(TARGET_SIZE/targetW, TARGET_SIZE/targetH);
+    const dw = Math.round(bw*scale), dh = Math.round(bh*scale);
+    const dx = Math.floor((TARGET_SIZE - dw)/2), dy = Math.floor((TARGET_SIZE - dh)/2);
+    mbx.drawImage(boxCanvas, 0, 0, bw, bh, dx, dy, dw, dh);
+
+    // Componer sobre blanco con la imagen original (también recortada a bbox y reescalada igual)
     const outCn = document.createElement("canvas"); outCn.width = TARGET_SIZE; outCn.height = TARGET_SIZE;
     const outCx = outCn.getContext("2d", { willReadFrequently: true })!;
-    outCx.fillStyle = "#fff"; outCx.fillRect(0, 0, TARGET_SIZE, TARGET_SIZE);
+    outCx.fillStyle="#fff"; outCx.fillRect(0,0,TARGET_SIZE,TARGET_SIZE);
 
     const img = new Image(); img.src = dataUrl; await img.decode();
+    const imgBox = document.createElement("canvas"); imgBox.width=bw; imgBox.height=bh;
+    const ibx = imgBox.getContext("2d")!;
+    // recordar: dataUrl ya es cuadriculado TARGET_SIZE del objeto centrado, no necesitamos letterbox aquí
+    // reconstruimos la misma región del bbox en 320→ pero nuestro dataUrl ya es 640; hacemos un mapeo proporcional
+    // Para simplificar, re-escalamos la imagen completa al tamaño destino y enmascaramos: resultado visual es el mismo.
+    const imgScaled = document.createElement("canvas"); imgScaled.width=TARGET_SIZE; imgScaled.height=TARGET_SIZE;
+    const isx = imgScaled.getContext("2d")!;
+    isx.drawImage(img, 0,0,TARGET_SIZE,TARGET_SIZE);
+    // aplicar máscara
+    isx.globalCompositeOperation = "destination-in";
+    isx.drawImage(maskBoxed, 0, 0);
 
-    const fg = document.createElement("canvas"); fg.width = TARGET_SIZE; fg.height = TARGET_SIZE;
-    const fgx = fg.getContext("2d")!;
-    fgx.drawImage(img, 0, 0, TARGET_SIZE, TARGET_SIZE);
-    fgx.globalCompositeOperation = "destination-in";
-    fgx.drawImage(maskFinal, 0, 0);
-
-    outCx.globalCompositeOperation = "source-over";
-    outCx.drawImage(fg, 0, 0);
+    outCx.drawImage(imgScaled, 0, 0);
 
     return outCn.toDataURL("image/webp", 0.92);
   };
@@ -343,10 +447,14 @@ export default function SpinVideoPage() {
   const removeBackgroundAll = useCallback(async () => {
     if (!frames.length) { alert("Genera los 36 frames primero."); return; }
     try {
-      setMatting(true); setMatteProgress(0); lastMaskRef.current = null;
+      setMatting(true); setMatteProgress(0);
+      lastMaskRef.current = null;
+      bgLabRef.current = null;
+      normRef.current = null;
+
       const out: string[] = [];
       for (let i = 0; i < frames.length; i++) {
-        const url = await runMatte(frames[i]);
+        const url = await runMatte(frames[i], i===0);
         out.push(url);
         setMatteProgress(Math.round(((i + 1) / frames.length) * 100));
         await new Promise((r) => setTimeout(r, 0));
@@ -363,7 +471,10 @@ export default function SpinVideoPage() {
   const clearVideo = () => {
     if (objUrl) URL.revokeObjectURL(objUrl);
     setObjUrl(""); setFrames([]); setLoaded(false); setDuration(0);
-    setProgress(0); setCurrent(0); setMatteProgress(0); lastMaskRef.current = null;
+    setProgress(0); setCurrent(0); setMatteProgress(0);
+    lastMaskRef.current = null;
+    bgLabRef.current = null;
+    normRef.current = null;
   };
 
   return (
