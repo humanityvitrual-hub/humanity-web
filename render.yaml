@@ -1,0 +1,8 @@
+services:
+  - type: web
+    name: humanity-bgremover
+    env: docker
+    plan: free
+    autoDeploy: true
+    dockerfilePath: server/Dockerfile
+    healthCheckPath: /docs
