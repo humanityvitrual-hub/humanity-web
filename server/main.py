@@ -53,3 +53,12 @@ def remove_bg(payload: FramesIn):
         cut = remove(img)  # RGBA con alfa (U^2Net)
         out.append(_image_to_dataurl(cut))
     return {"ok": True, "frames": out}
+
+# --- endpoints de salud para Render ---
+@app.get("/health")
+def health():
+    return {"ok": True}
+
+@app.post("/echo")
+def echo(payload: dict):
+    return {"ok": True, "echo": payload}
