@@ -21,6 +21,7 @@ export default function SpinVideoPage() {
   const [dragging, setDragging] = useState(false);
 
   const [cloudBusy, setCloudBusy] = useState(false);
+  const [cloudStep, setCloudStep] = useState<"idle"|"upload"|"processing"|"downloading">("idle");
 
   useEffect(() => () => { if (objUrl) URL.revokeObjectURL(objUrl); }, [objUrl]);
 
@@ -48,7 +49,7 @@ export default function SpinVideoPage() {
       v.currentTime = Math.min(Math.max(t, 0), v.duration || 0);
     });
 
-  // ------- LETTERBOX helper (escala sin recortar) -------
+  // Letterbox: escala sin recortar, sobre fondo blanco
   function drawLetterboxed(
     ctx: CanvasRenderingContext2D,
     source: CanvasImageSource,
@@ -63,12 +64,11 @@ export default function SpinVideoPage() {
     const dx = Math.floor((dw - w) / 2);
     const dy = Math.floor((dh - h) / 2);
     ctx.clearRect(0, 0, dw, dh);
-    ctx.fillStyle = "#fff"; // fondo blanco
+    ctx.fillStyle = "#fff";
     ctx.fillRect(0, 0, dw, dh);
     ctx.drawImage(source, 0, 0, sw, sh, dx, dy, w, h);
   }
 
-  // ------- Extraer frames (letterbox) -------
   const extractFrames = useCallback(async (nFrames = N_FRAMES) => {
     const v = videoRef.current, c = canvasRef.current;
     if (!v || !c || !duration) return;
@@ -93,15 +93,11 @@ export default function SpinVideoPage() {
         await new Promise((r) => setTimeout(r, 0));
       }
       setFrames(urls); setCurrent(0);
-    } catch (err) {
-      console.error(err);
-      alert("Error generando frames. Reintenta con un video 8–12s.");
-    } finally {
-      setExtracting(false);
-    }
+    } catch (err) { console.error(err); alert("Error generando frames."); }
+    finally { setExtracting(false); }
   }, [duration]);
 
-  // --- compresión cliente: 480x480, 12fps, <=8s, LETTERBOX ---
+  // Compresión ligera en cliente (para subir rápido)
   async function compressVideoToSquareWebM(file: File, maxSecs=8, fps=12, SIZE=480): Promise<Blob> {
     const src = URL.createObjectURL(file);
     const v = document.createElement("video");
@@ -116,10 +112,8 @@ export default function SpinVideoPage() {
     const cx = cn.getContext("2d", { willReadFrequently: true })!;
 
     const stream = cn.captureStream(fps);
-    const mime = MediaRecorder.isTypeSupported("video/webm;codecs=vp9")
-      ? "video/webm;codecs=vp9"
-      : "video/webm";
-    const rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 1_000_000 }); // ~1Mbps
+    const mime = MediaRecorder.isTypeSupported("video/webm;codecs=vp9") ? "video/webm;codecs=vp9" : "video/webm";
+    const rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 1_000_000 });
     const chunks: Blob[] = [];
     rec.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
 
@@ -135,31 +129,46 @@ export default function SpinVideoPage() {
       else { rec.stop(); cancelAnimationFrame(rafId); }
     }
 
-    await new Promise<void>((resolve) => {
-      rec.onstart = () => { loop(); };
-      rec.onstop = () => resolve();
-      rec.start(100); // ms
-    });
-
+    await new Promise<void>((resolve) => { rec.onstart = () => { loop(); }; rec.onstop = () => resolve(); rec.start(100); });
     URL.revokeObjectURL(src);
     return new Blob(chunks, { type: mime });
   }
 
-  // 1-click cloud: comprimir (letterbox) → /api/rvm → video limpio → extraer frames (letterbox)
+  // Cloud RVM: start -> poll status -> fetch -> extract
   const generateCleanCloud = useCallback(async () => {
     const f = fileRef.current;
     if (!f) { alert("Elige un video primero."); return; }
     try {
       setCloudBusy(true);
+      setCloudStep("upload");
       const small = await compressVideoToSquareWebM(f, 8, 12, 480);
+
+      // 1) START
       const fd = new FormData();
       fd.append("video", new File([small], "clip.webm", { type: small.type }));
-      const res = await fetch("/api/rvm", { method: "POST", body: fd });
-      if (!res.ok) {
-        const msg = await res.text().catch(() => String(res.status));
-        throw new Error(`RVM ${res.status}: ${msg}`);
+      const sres = await fetch("/api/rvm/start", { method: "POST", body: fd });
+      if (!sres.ok) throw new Error(`start ${sres.status}`);
+      const { id, ok } = await sres.json();
+      if (!ok || !id) throw new Error("start: no id");
+
+      // 2) POLL STATUS
+      setCloudStep("processing");
+      let url: string | undefined;
+      for (let i = 0; i < 120; i++) { // hasta ~4 minutos
+        await new Promise(r => setTimeout(r, 2000));
+        const q = await fetch(`/api/rvm/status?id=${encodeURIComponent(id)}`);
+        if (!q.ok) throw new Error(`status ${q.status}`);
+        const js = await q.json();
+        if (js.status === "succeeded" && js.url) { url = js.url; break; }
+        if (js.status === "failed" || js.status === "canceled") throw new Error(`status ${js.status}`);
       }
-      const blob = await res.blob();
+      if (!url) throw new Error("Timeout waiting for Replicate");
+
+      // 3) FETCH (proxy) y usar ese video limpio
+      setCloudStep("downloading");
+      const fres = await fetch(`/api/rvm/fetch?url=${encodeURIComponent(url)}`);
+      if (!fres.ok) throw new Error(`fetch ${fres.status}`);
+      const blob = await fres.blob();
       const cleanUrl = URL.createObjectURL(blob);
 
       if (objUrl) URL.revokeObjectURL(objUrl);
@@ -174,9 +183,11 @@ export default function SpinVideoPage() {
       });
 
       await extractFrames(N_FRAMES);
+      setCloudStep("idle");
     } catch (e:any) {
       console.error(e);
       alert(e?.message || "Fallo procesando en la nube.");
+      setCloudStep("idle");
     } finally {
       setCloudBusy(false);
     }
@@ -204,7 +215,7 @@ export default function SpinVideoPage() {
       <div className="max-w-6xl mx-auto pt-10">
         <h1 className="text-3xl md:text-4xl font-bold">Create a 360 product from a video</h1>
         <p className="mt-2 text-slate-600">
-          Upload a short spin video. Extract <b>{N_FRAMES} frames</b> locally or use <b>Cloud RVM</b> (with client-side compression).
+          Upload a short spin video. Extract <b>{N_FRAMES} frames</b> locally or use <b>Cloud RVM</b> (async, with client-side compression).
         </p>
 
         <div className="mt-6 flex flex-wrap gap-3 items-center">
@@ -227,14 +238,13 @@ export default function SpinVideoPage() {
                 disabled={cloudBusy || !fileRef.current}
                 onClick={generateCleanCloud}
                 className="px-3 py-2 rounded-lg border bg-emerald-600 text-white shadow-sm hover:shadow transition disabled:opacity-50 text-sm"
+                title={!fileRef.current ? "Choose a video first" : ""}
               >
-                {cloudBusy ? "Processing in cloud…" : "Generate Clean 36 (Cloud RVM)"}
+                {cloudBusy ? (cloudStep === "upload" ? "Uploading…" : cloudStep === "processing" ? "Processing in cloud…" : "Downloading…")
+                           : "Generate Clean 36 (Cloud RVM)"}
               </button>
 
-              <button
-                onClick={clearVideo}
-                className="px-3 py-2 rounded-lg border bg-white/70 shadow-sm hover:shadow transition text-sm"
-              >
+              <button onClick={clearVideo} className="px-3 py-2 rounded-lg border bg-white/70 shadow-sm hover:shadow transition text-sm">
                 Reset
               </button>
 
@@ -271,7 +281,7 @@ export default function SpinVideoPage() {
                   <div className="h-2 bg-slate-800 rounded transition-all" style={{ width: `${extracting ? progress : 100}%` }} />
                 </div>
                 <p className="text-xs mt-2 text-slate-500">
-                  {extracting ? `Extracting… ${progress}%` : `Processing in cloud…`}
+                  {extracting ? `Extracting… ${progress}%` : cloudStep === "upload" ? "Uploading…" : cloudStep === "processing" ? "Processing in cloud…" : "Downloading…"}
                 </p>
               </div>
             )}
@@ -289,12 +299,7 @@ export default function SpinVideoPage() {
                 onPointerUp={onPointerUp}
                 onPointerMove={onPointerMove}
               >
-                <img
-                  src={frames[current]}
-                  alt={`frame ${current + 1}/${frames.length}`}
-                  className="w-full h-full object-contain"
-                  draggable={false}
-                />
+                <img src={frames[current]} alt={`frame ${current + 1}/${frames.length}`} className="w-full h-full object-contain" draggable={false} />
                 <div className="absolute bottom-2 right-3 text-[11px] text-slate-500 bg-white/70 rounded px-2 py-[2px]">
                   {current + 1}/{frames.length}
                 </div>
