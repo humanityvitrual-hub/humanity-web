@@ -8,6 +8,10 @@ from rembg import remove
 
 app = FastAPI(title="bgremover")
 
+from server.cors_fix import apply_permissive_cors
+apply_permissive_cors(app)
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
