@@ -21,11 +21,17 @@ export async function OPTIONS() {
 
 export async function POST(req: Request) {
   try {
-    if (!process.env.REPLICATE_API_TOKEN) {
-      return new Response(JSON.stringify({ ok: false, error: "Missing REPLICATE_API_TOKEN" }), {
+    const token =
+      process.env.REPLICATE_API_TOKEN ||
+      process.env.REPLICATE_TOKEN ||
+      process.env.NEXT_PUBLIC_REPLICATE_API_TOKEN || "";
+
+    if (!token) {
+      return new Response(JSON.stringify({ ok: false, error: "Missing REPLICATE token" }), {
         status: 503, headers: { "Content-Type": "application/json", ...cors() },
       });
     }
+
     const form = await req.formData();
     const file = form.get("video");
     if (!(file instanceof File)) {
@@ -35,7 +41,7 @@ export async function POST(req: Request) {
     }
 
     const buffer = Buffer.from(await file.arrayBuffer());
-    const replicate = new Replicate({ auth: process.env.REPLICATE_API_TOKEN! });
+    const replicate = new Replicate({ auth: token });
 
     const pred = await replicate.predictions.create({
       version: MODEL_VERSION,
