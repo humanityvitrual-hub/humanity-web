@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+const BG_API = process.env.NEXT_PUBLIC_BG_API || ""; // <- viene de Vercel
+
 export default function SpinVideoPage() {
   const N_FRAMES = 36;
   const TARGET_SIZE = 640;
@@ -14,8 +16,9 @@ export default function SpinVideoPage() {
   const [duration, setDuration] = useState(0);
 
   const [extracting, setExtracting] = useState(false);
-  const [masking, setMasking] = useState(false);
+  const [processing, setProcessing] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [status, setStatus] = useState("");
   const [frames, setFrames] = useState<string[]>([]);
   const [current, setCurrent] = useState(0);
   const [dragging, setDragging] = useState(false);
@@ -86,6 +89,7 @@ export default function SpinVideoPage() {
       if (!ctx) throw new Error("No se pudo obtener el contexto 2D del canvas.");
 
       setExtracting(true);
+      setStatus("Extracting frames…");
       setProgress(0);
 
       const urls: string[] = [];
@@ -107,10 +111,11 @@ export default function SpinVideoPage() {
       alert("Error generando frames. Reintenta con un video 8–12s.");
     } finally {
       setExtracting(false);
+      setStatus("");
     }
   }, [duration]);
 
-  // Utilidad para cargar una dataURL a <img>
+  // Utils
   function loadImage(url: string): Promise<HTMLImageElement> {
     return new Promise((res, rej) => {
       const im = new Image();
@@ -120,62 +125,111 @@ export default function SpinVideoPage() {
     });
   }
 
-  // Quitar fondo local (MediaPipe Selfie Segmentation)
-  const removeBgLocal = useCallback(async () => {
-    if (!frames.length || masking) return;
-    setMasking(true);
+  // BBox por alfa
+  function bboxAlpha(img: HTMLImageElement) {
+    const t = document.createElement("canvas");
+    t.width = img.width; t.height = img.height;
+    const tx = t.getContext("2d", { willReadFrequently: true })!;
+    tx.clearRect(0,0,t.width,t.height);
+    tx.drawImage(img,0,0);
+    const data = tx.getImageData(0,0,t.width,t.height).data;
+    let minX = t.width, minY = t.height, maxX = -1, maxY = -1;
+    for (let y=0; y<t.height; y++) {
+      for (let x=0; x<t.width; x++) {
+        const a = data[(y*t.width + x)*4 + 3];
+        if (a > 10) { // umbral
+          if (x < minX) minX = x;
+          if (y < minY) minY = y;
+          if (x > maxX) maxX = x;
+          if (y > maxY) maxY = y;
+        }
+      }
+    }
+    if (maxX < 0 || maxY < 0) return {x:0,y:0,w:img.width,h:img.height};
+    return {x:minX, y:minY, w:maxX-minX+1, h:maxY-minY+1};
+  }
+
+  // Normaliza: misma escala + centro
+  async function normalizeFrames(pngs: string[]): Promise<string[]> {
+    setStatus("Normalizing…");
     setProgress(0);
+    const imgs: HTMLImageElement[] = [];
+    for (let i=0;i<pngs.length;i++) {
+      imgs.push(await loadImage(pngs[i]));
+    }
+    // bboxes + mayor dimensión
+    const bboxes = imgs.map(bboxAlpha);
+    const maxDim = Math.max(...bboxes.map(b => Math.max(b.w, b.h)));
+    const SCALE = (TARGET_SIZE * 0.86) / maxDim; // margen
+    const out: string[] = [];
+    const c = document.createElement("canvas");
+    c.width = TARGET_SIZE; c.height = TARGET_SIZE;
+    const cx = c.getContext("2d", { willReadFrequently: true })!;
+    for (let i=0;i<imgs.length;i++) {
+      const im = imgs[i]; const b = bboxes[i];
+      const dw = Math.round(b.w * SCALE);
+      const dh = Math.round(b.h * SCALE);
+      const dx = Math.floor((TARGET_SIZE - dw) / 2);
+      const dy = Math.floor((TARGET_SIZE - dh) / 2);
+      cx.clearRect(0,0,c.width,c.height);
+      // Fondo blanco para preview limpio (puedes quitar si quieres transparencia)
+      cx.fillStyle = "#fff"; cx.fillRect(0,0,c.width,c.height);
+      cx.drawImage(im, b.x, b.y, b.w, b.h, dx, dy, dw, dh);
+      out.push(c.toDataURL("image/webp", 0.95));
+      setProgress(Math.round(((i+1)/imgs.length)*100));
+      await new Promise(r=>setTimeout(r,0));
+    }
+    setStatus("");
+    return out;
+  }
+
+  // Llamada al backend (Render) en lotes
+  const removeBgServer = useCallback(async () => {
+    if (!frames.length) return;
+    if (!BG_API) { alert("Falta configurar NEXT_PUBLIC_BG_API"); return; }
 
     try {
-      const mp = await import("@mediapipe/selfie_segmentation");
-      const SelfieSegmentation = (mp as any).SelfieSegmentation;
-      const segmenter = new SelfieSegmentation({
-        locateFile: (file: string) =>
-          `https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/${file}`,
-      });
-      segmenter.setOptions({ modelSelection: 1, selfieMode: false });
+      setProcessing(true);
+      setStatus("Uploading frames…");
+      setProgress(0);
 
-      const out = document.createElement("canvas");
-      out.width = TARGET_SIZE; out.height = TARGET_SIZE;
-      const octx = out.getContext("2d", { willReadFrequently: true })!;
-
-      const processed: string[] = [];
-
-      for (let i = 0; i < frames.length; i++) {
-        const img = await loadImage(frames[i]);
-
-        const segMask: HTMLCanvasElement = await new Promise((resolve) => {
-          segmenter.onResults((r: any) => resolve(r.segmentationMask));
-          segmenter.send({ image: img });
+      const BATCH = 6; // payload moderado
+      const outPngs: string[] = [];
+      for (let i=0; i<frames.length; i+=BATCH) {
+        const slice = frames.slice(i, i+BATCH);
+        const res = await fetch(`${BG_API}/remove_bg`, {
+          method: "POST",
+          headers: {"Content-Type":"application/json"},
+          body: JSON.stringify({ frames: slice }),
         });
-
-        // Composición: imagen con máscara (mantener primer plano)
-        octx.save();
-        octx.clearRect(0, 0, out.width, out.height);
-        octx.drawImage(img, 0, 0, out.width, out.height);
-        octx.globalCompositeOperation = "destination-in";
-        octx.filter = "blur(1.2px)";
-        octx.drawImage(segMask, 0, 0, out.width, out.height);
-        octx.filter = "none";
-        octx.restore();
-
-        processed.push(out.toDataURL("image/webp", 0.92));
-        setProgress(Math.round(((i + 1) / frames.length) * 100));
-        await new Promise((r) => setTimeout(r, 0));
+        if (!res.ok) {
+          const t = await res.text();
+          throw new Error(`Server error: ${res.status} ${t}`);
+        }
+        const json = await res.json();
+        if (!json.ok || !Array.isArray(json.frames)) {
+          throw new Error("Bad server response");
+        }
+        outPngs.push(...json.frames);
+        setProgress(Math.round(((i + slice.length) / frames.length) * 100));
+        await new Promise(r=>setTimeout(r,0));
       }
 
-      setFrames(processed);
+      // Normalización (centra/escala consistente)
+      const normalized = await normalizeFrames(outPngs);
+      setFrames(normalized);
       setCurrent(0);
-    } catch (e) {
+    } catch (e:any) {
       console.error(e);
-      alert("No se pudo quitar el fondo en el navegador. Prueba con mejor iluminación/fondo simple.");
+      alert(e?.message || "Remove-bg (server) failed.");
     } finally {
-      setMasking(false);
+      setProcessing(false);
+      setStatus("");
       setProgress(0);
     }
-  }, [frames, masking]);
+  }, [frames]);
 
-  // Visor 360 (drag)
+  // Visor 360
   const onPointerDown = (ev: React.PointerEvent) => {
     if (!frames.length) return;
     setDragging(true);
@@ -207,6 +261,7 @@ export default function SpinVideoPage() {
     setLoaded(false);
     setDuration(0);
     setProgress(0);
+    setStatus("");
     setCurrent(0);
   };
 
@@ -216,7 +271,7 @@ export default function SpinVideoPage() {
         <h1 className="text-3xl md:text-4xl font-bold">Create a 360 product from a video</h1>
         <p className="mt-2 text-slate-600">
           Upload a short spin video (8–12s). We extract <b>{N_FRAMES} frames</b> in the browser and build a 360° viewer.
-          This is <b>Preview-only</b>; no backend uploads.
+          This is <b>Preview-only</b>; no backend uploads (except optional server remove-bg).
         </p>
 
         <div className="mt-6 flex flex-wrap gap-3 items-center">
@@ -236,12 +291,12 @@ export default function SpinVideoPage() {
               </button>
 
               <button
-                disabled={!frames.length || masking || extracting}
-                onClick={removeBgLocal}
+                disabled={!frames.length || processing}
+                onClick={removeBgServer}
                 className="px-3 py-2 rounded-lg border bg-indigo-600 text-white shadow-sm hover:shadow transition disabled:opacity-50 text-sm"
-                title="Quita el fondo en tu dispositivo (gratis, sin subir nada)"
+                title={BG_API ? `Server: ${new URL(BG_API).host}` : "Configure NEXT_PUBLIC_BG_API"}
               >
-                {masking ? `Removing background… ${progress}%` : "Remove background (local)"}
+                {processing ? (status ? `${status} ${progress}%` : "Processing…") : "Remove background (server)"}
               </button>
 
               <button
@@ -256,6 +311,10 @@ export default function SpinVideoPage() {
               ) : objUrl ? (
                 <span className="text-slate-500 text-sm">Loading metadata…</span>
               ) : null}
+
+              {!BG_API && (
+                <span className="text-amber-600 text-sm ml-2">Server URL not set</span>
+              )}
             </>
           )}
         </div>
@@ -278,13 +337,13 @@ export default function SpinVideoPage() {
               />
             )}
 
-            {(extracting || masking) && (
+            {(extracting || processing) && (
               <div className="mt-3">
                 <div className="h-2 bg-slate-200 rounded">
                   <div className="h-2 bg-slate-800 rounded transition-all" style={{ width: `${progress}%` }} />
                 </div>
                 <p className="text-xs mt-2 text-slate-500">
-                  {extracting ? "Extracting frames…" : "Removing background…"} {progress}%
+                  {status || "Working…"} {progress}%
                 </p>
               </div>
             )}
