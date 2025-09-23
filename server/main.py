@@ -1,5 +1,5 @@
 import base64, io
-from typing import List, Any, Dict
+from typing import List
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -8,7 +8,6 @@ from rembg import remove
 
 app = FastAPI(title="bgremover")
 
-# CORS abierto (para Vercel preview)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -17,7 +16,7 @@ app.add_middleware(
 )
 
 class FramesIn(BaseModel):
-    frames: List[str]  # dataURLs (image/webp/png/jpeg), recomendado <= 640px
+    frames: List[str]   # dataURLs (image/webp/png/jpeg), tamaño recomendado <= 640px
 
 def _dataurl_to_image(data_url: str) -> Image.Image:
     comma = data_url.find(",")
@@ -29,20 +28,25 @@ def _dataurl_to_image(data_url: str) -> Image.Image:
 
 def _image_to_dataurl(img: Image.Image) -> str:
     buf = io.BytesIO()
-    img.save(buf, format="PNG")
+    img.save(buf, format="PNG")  # devolvemos PNG con alfa
     b64 = base64.b64encode(buf.getvalue()).decode("ascii")
     return f"data:image/png;base64,{b64}"
 
+def _resize_if_needed(img: Image.Image, max_side=640) -> Image.Image:
+    w, h = img.size
+    m = max(w, h)
+    if m <= max_side:
+        return img
+    scale = max_side / float(m)
+    return img.resize((int(w*scale), int(h*scale)), Image.LANCZOS)
+
 @app.get("/")
-def root() -> Dict[str, Any]:
+@app.get("/health")
+def health():
     return {"ok": True, "service": "bgremover"}
 
-@app.get("/health")
-def health() -> Dict[str, Any]:
-    return {"ok": True}
-
 @app.post("/echo")
-def echo(payload: Dict[str, Any]) -> Dict[str, Any]:
+def echo(payload: dict):
     return {"ok": True, "echo": payload}
 
 @app.post("/remove_bg")
@@ -50,15 +54,7 @@ def remove_bg(payload: FramesIn):
     out = []
     for durl in payload.frames:
         img = _dataurl_to_image(durl)
-        cut = remove(img)  # RGBA con alfa (U^2Net)
+        img = _resize_if_needed(img, 640)   # evita timeouts en Render
+        cut = remove(img)                   # RGBA con alfa
         out.append(_image_to_dataurl(cut))
     return {"ok": True, "frames": out}
-
-# --- endpoints de salud para Render ---
-@app.get("/health")
-def health():
-    return {"ok": True}
-
-@app.post("/echo")
-def echo(payload: dict):
-    return {"ok": True, "echo": payload}
