@@ -1,4 +1,5 @@
 "use client";
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 export default function SpinVideoPage() {
@@ -7,35 +8,45 @@ export default function SpinVideoPage() {
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const fileRef = useRef<File | null>(null);
 
   const [objUrl, setObjUrl] = useState<string>("");
   const [loaded, setLoaded] = useState(false);
   const [duration, setDuration] = useState(0);
 
   const [extracting, setExtracting] = useState(false);
+  const [masking, setMasking] = useState(false);
   const [progress, setProgress] = useState(0);
   const [frames, setFrames] = useState<string[]>([]);
   const [current, setCurrent] = useState(0);
   const [dragging, setDragging] = useState(false);
 
+  // Limpieza del ObjectURL
   useEffect(() => () => { if (objUrl) URL.revokeObjectURL(objUrl); }, [objUrl]);
 
   const onPickFile = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0];
-    if (!f) return;
-    fileRef.current = f;
-    if (objUrl) URL.revokeObjectURL(objUrl);
-    setFrames([]); setCurrent(0); setLoaded(false); setDuration(0);
-    const url = URL.createObjectURL(f);
-    setObjUrl(url);
+    try {
+      const f = e.target.files?.[0];
+      if (!f) return;
+      if (objUrl) URL.revokeObjectURL(objUrl);
+      setFrames([]); setCurrent(0); setLoaded(false); setDuration(0);
+      const url = URL.createObjectURL(f);
+      setObjUrl(url);
+    } catch (err) {
+      console.error(err);
+      alert("Error al cargar el video.");
+    }
   };
 
   const onLoadedMeta = () => {
-    const v = videoRef.current; if (!v) return;
-    setDuration(v.duration || 0); setLoaded(true); v.pause(); v.currentTime = 0;
+    const v = videoRef.current;
+    if (!v) return;
+    setDuration(v.duration || 0);
+    setLoaded(true);
+    v.pause();
+    v.currentTime = 0;
   };
 
+  // seek confiable
   const seekTo = (v: HTMLVideoElement, t: number) =>
     new Promise<void>((resolve) => {
       const onSeek = () => { v.removeEventListener("seeked", onSeek); resolve(); };
@@ -43,7 +54,7 @@ export default function SpinVideoPage() {
       v.currentTime = Math.min(Math.max(t, 0), v.duration || 0);
     });
 
-  // Letterbox (no corta cabeza ni pies)
+  // Letterbox (evita cortar cabeza/pies)
   function drawLetterboxed(
     ctx: CanvasRenderingContext2D,
     source: CanvasImageSource,
@@ -64,6 +75,7 @@ export default function SpinVideoPage() {
   const extractFrames = useCallback(async (nFrames = N_FRAMES) => {
     const v = videoRef.current, c = canvasRef.current;
     if (!v || !c || !duration) return;
+
     try {
       try { v.muted = true; await v.play(); v.pause(); } catch {}
       const vw = v.videoWidth, vh = v.videoHeight;
@@ -73,18 +85,23 @@ export default function SpinVideoPage() {
       const ctx = c.getContext("2d", { willReadFrequently: true });
       if (!ctx) throw new Error("No se pudo obtener el contexto 2D del canvas.");
 
-      setExtracting(true); setProgress(0);
+      setExtracting(true);
+      setProgress(0);
+
       const urls: string[] = [];
       const dt = duration / nFrames;
 
       for (let i = 0; i < nFrames; i++) {
         await seekTo(v, i * dt);
         drawLetterboxed(ctx, v, vw, vh, TARGET_SIZE, TARGET_SIZE);
-        urls.push(c.toDataURL("image/webp", 0.92));
+        const dataUrl = c.toDataURL("image/webp", 0.92);
+        urls.push(dataUrl);
         setProgress(Math.round(((i + 1) / nFrames) * 100));
         await new Promise((r) => setTimeout(r, 0));
       }
-      setFrames(urls); setCurrent(0);
+
+      setFrames(urls);
+      setCurrent(0);
     } catch (err) {
       console.error(err);
       alert("Error generando frames. Reintenta con un video 8–12s.");
@@ -93,21 +110,104 @@ export default function SpinVideoPage() {
     }
   }, [duration]);
 
-  // Visor con arrastre
-  const onPointerDown = (ev: React.PointerEvent) => { if (!frames.length) return; setDragging(true); (ev.target as HTMLElement).setPointerCapture?.(ev.pointerId); };
-  const onPointerUp = (ev: React.PointerEvent) => { setDragging(false); (ev.target as HTMLElement).releasePointerCapture?.(ev.pointerId); };
+  // Utilidad para cargar una dataURL a <img>
+  function loadImage(url: string): Promise<HTMLImageElement> {
+    return new Promise((res, rej) => {
+      const im = new Image();
+      im.onload = () => res(im);
+      im.onerror = rej;
+      im.src = url;
+    });
+  }
+
+  // Quitar fondo local (MediaPipe Selfie Segmentation)
+  const removeBgLocal = useCallback(async () => {
+    if (!frames.length || masking) return;
+    setMasking(true);
+    setProgress(0);
+
+    try {
+      const mp = await import("@mediapipe/selfie_segmentation");
+      const SelfieSegmentation = (mp as any).SelfieSegmentation;
+      const segmenter = new SelfieSegmentation({
+        locateFile: (file: string) =>
+          `https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/${file}`,
+      });
+      segmenter.setOptions({ modelSelection: 1, selfieMode: false });
+
+      const out = document.createElement("canvas");
+      out.width = TARGET_SIZE; out.height = TARGET_SIZE;
+      const octx = out.getContext("2d", { willReadFrequently: true })!;
+
+      const processed: string[] = [];
+
+      for (let i = 0; i < frames.length; i++) {
+        const img = await loadImage(frames[i]);
+
+        const segMask: HTMLCanvasElement = await new Promise((resolve) => {
+          segmenter.onResults((r: any) => resolve(r.segmentationMask));
+          segmenter.send({ image: img });
+        });
+
+        // Composición: imagen con máscara (mantener primer plano)
+        octx.save();
+        octx.clearRect(0, 0, out.width, out.height);
+        octx.drawImage(img, 0, 0, out.width, out.height);
+        octx.globalCompositeOperation = "destination-in";
+        octx.filter = "blur(1.2px)";
+        octx.drawImage(segMask, 0, 0, out.width, out.height);
+        octx.filter = "none";
+        octx.restore();
+
+        processed.push(out.toDataURL("image/webp", 0.92));
+        setProgress(Math.round(((i + 1) / frames.length) * 100));
+        await new Promise((r) => setTimeout(r, 0));
+      }
+
+      setFrames(processed);
+      setCurrent(0);
+    } catch (e) {
+      console.error(e);
+      alert("No se pudo quitar el fondo en el navegador. Prueba con mejor iluminación/fondo simple.");
+    } finally {
+      setMasking(false);
+      setProgress(0);
+    }
+  }, [frames, masking]);
+
+  // Visor 360 (drag)
+  const onPointerDown = (ev: React.PointerEvent) => {
+    if (!frames.length) return;
+    setDragging(true);
+    (ev.target as HTMLElement).setPointerCapture?.(ev.pointerId);
+  };
+  const onPointerUp = (ev: React.PointerEvent) => {
+    setDragging(false);
+    (ev.target as HTMLElement).releasePointerCapture?.(ev.pointerId);
+  };
   const onPointerMove = (ev: React.PointerEvent) => {
     if (!dragging || !frames.length) return;
-    const delta = Math.trunc(ev.movementX / 6);
-    if (delta) setCurrent(i => { let n = (i - delta) % frames.length; if (n < 0) n += frames.length; return n; });
+    const SENS = 6;
+    const delta = Math.trunc(ev.movementX / SENS);
+    if (delta !== 0) {
+      setCurrent((i) => {
+        let n = (i - delta) % frames.length;
+        if (n < 0) n += frames.length;
+        return n;
+      });
+    }
   };
 
   const canExtract = useMemo(() => loaded && !!objUrl && !extracting, [loaded, objUrl, extracting]);
 
   const clearVideo = () => {
     if (objUrl) URL.revokeObjectURL(objUrl);
-    setObjUrl(""); setFrames([]); setLoaded(false); setDuration(0);
-    setProgress(0); setCurrent(0);
+    setObjUrl("");
+    setFrames([]);
+    setLoaded(false);
+    setDuration(0);
+    setProgress(0);
+    setCurrent(0);
   };
 
   return (
@@ -135,7 +235,19 @@ export default function SpinVideoPage() {
                 {extracting ? "Extracting…" : `Generate ${N_FRAMES} frames (local)`}
               </button>
 
-              <button onClick={clearVideo} className="px-3 py-2 rounded-lg border bg-white/70 shadow-sm hover:shadow transition text-sm">
+              <button
+                disabled={!frames.length || masking || extracting}
+                onClick={removeBgLocal}
+                className="px-3 py-2 rounded-lg border bg-indigo-600 text-white shadow-sm hover:shadow transition disabled:opacity-50 text-sm"
+                title="Quita el fondo en tu dispositivo (gratis, sin subir nada)"
+              >
+                {masking ? `Removing background… ${progress}%` : "Remove background (local)"}
+              </button>
+
+              <button
+                onClick={clearVideo}
+                className="px-3 py-2 rounded-lg border bg-white/70 shadow-sm hover:shadow transition text-sm"
+              >
                 Reset
               </button>
 
@@ -166,12 +278,14 @@ export default function SpinVideoPage() {
               />
             )}
 
-            {extracting && (
+            {(extracting || masking) && (
               <div className="mt-3">
                 <div className="h-2 bg-slate-200 rounded">
                   <div className="h-2 bg-slate-800 rounded transition-all" style={{ width: `${progress}%` }} />
                 </div>
-                <p className="text-xs mt-2 text-slate-500">Extracting frames… {progress}%</p>
+                <p className="text-xs mt-2 text-slate-500">
+                  {extracting ? "Extracting frames…" : "Removing background…"} {progress}%
+                </p>
               </div>
             )}
           </div>
@@ -188,7 +302,12 @@ export default function SpinVideoPage() {
                 onPointerUp={onPointerUp}
                 onPointerMove={onPointerMove}
               >
-                <img src={frames[current]} alt={`frame ${current + 1}/${frames.length}`} className="w-full h-full object-contain" draggable={false} />
+                <img
+                  src={frames[current]}
+                  alt={`frame ${current + 1}/${frames.length}`}
+                  className="w-full h-full object-contain"
+                  draggable={false}
+                />
                 <div className="absolute bottom-2 right-3 text-[11px] text-slate-500 bg-white/70 rounded px-2 py-[2px]">
                   {current + 1}/{frames.length}
                 </div>
