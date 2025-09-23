@@ -1,12 +1,21 @@
-import base64, io
-from typing import List
+import base64, io, os
+from typing import List, Dict, Any
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from PIL import Image
+
+# rembg
 from rembg import remove
 
 app = FastAPI(title="bgremover")
+
+# CORS permisivo (preserva tu helper si existe)
+try:
+    from server.cors_fix import apply_permissive_cors
+    apply_permissive_cors(app)
+except Exception:
+    pass
 
 app.add_middleware(
     CORSMiddleware,
@@ -32,29 +41,36 @@ def _image_to_dataurl(img: Image.Image) -> str:
     b64 = base64.b64encode(buf.getvalue()).decode("ascii")
     return f"data:image/png;base64,{b64}"
 
-def _resize_if_needed(img: Image.Image, max_side=640) -> Image.Image:
-    w, h = img.size
-    m = max(w, h)
-    if m <= max_side:
-        return img
-    scale = max_side / float(m)
-    return img.resize((int(w*scale), int(h*scale)), Image.LANCZOS)
-
-@app.get("/")
 @app.get("/health")
-def health():
-    return {"ok": True, "service": "bgremover"}
+def health() -> Dict[str, Any]:
+    return {"ok": True}
 
 @app.post("/echo")
-def echo(payload: dict):
+def echo(payload: Dict[str, Any]) -> Dict[str, Any]:
     return {"ok": True, "echo": payload}
 
 @app.post("/remove_bg")
 def remove_bg(payload: FramesIn):
     out = []
     for durl in payload.frames:
-        img = _dataurl_to_image(durl)
-        img = _resize_if_needed(img, 640)   # evita timeouts en Render
-        cut = remove(img)                   # RGBA con alfa
-        out.append(_image_to_dataurl(cut))
+        try:
+            img = _dataurl_to_image(durl)
+
+            # Sanidad: limita resolución para que ONNX no truene en instancias chicas
+            MAX = 1024
+            if max(img.size) > MAX:
+                img.thumbnail((MAX, MAX))
+
+            # rembg (U²Net)
+            cut = remove(img)  # RGBA con alfa
+            out.append(_image_to_dataurl(cut))
+        except Exception as e:
+            # Fallback: devuelve la imagen original en PNG con alfa, no 500
+            print("remove_bg_error:", repr(e))
+            try:
+                out.append(_image_to_dataurl(img))
+            except Exception:
+                # Si ni siquiera pudimos decodificar, devuelvo un pixel transparente
+                px = Image.new("RGBA", (1,1), (0,0,0,0))
+                out.append(_image_to_dataurl(px))
     return {"ok": True, "frames": out}
