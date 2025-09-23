@@ -48,6 +48,27 @@ export default function SpinVideoPage() {
       v.currentTime = Math.min(Math.max(t, 0), v.duration || 0);
     });
 
+  // ------- LETTERBOX helper (escala sin recortar) -------
+  function drawLetterboxed(
+    ctx: CanvasRenderingContext2D,
+    source: CanvasImageSource,
+    sw: number,
+    sh: number,
+    dw: number,
+    dh: number
+  ) {
+    const s = Math.min(dw / sw, dh / sh);
+    const w = Math.round(sw * s);
+    const h = Math.round(sh * s);
+    const dx = Math.floor((dw - w) / 2);
+    const dy = Math.floor((dh - h) / 2);
+    ctx.clearRect(0, 0, dw, dh);
+    ctx.fillStyle = "#fff"; // fondo blanco
+    ctx.fillRect(0, 0, dw, dh);
+    ctx.drawImage(source, 0, 0, sw, sh, dx, dy, w, h);
+  }
+
+  // ------- Extraer frames (letterbox) -------
   const extractFrames = useCallback(async (nFrames = N_FRAMES) => {
     const v = videoRef.current, c = canvasRef.current;
     if (!v || !c || !duration) return;
@@ -55,8 +76,6 @@ export default function SpinVideoPage() {
       try { v.muted = true; await v.play(); v.pause(); } catch {}
       const vw = v.videoWidth, vh = v.videoHeight;
       if (!vw || !vh) throw new Error("El video no tiene dimensiones válidas.");
-      const side = Math.min(vw, vh);
-      const sx = (vw - side) / 2, sy = (vh - side) / 2;
 
       c.width = TARGET_SIZE; c.height = TARGET_SIZE;
       const ctx = c.getContext("2d", { willReadFrequently: true });
@@ -68,18 +87,21 @@ export default function SpinVideoPage() {
 
       for (let i = 0; i < nFrames; i++) {
         await seekTo(v, i * dt);
-        ctx.clearRect(0, 0, c.width, c.height);
-        ctx.drawImage(v, sx, sy, side, side, 0, 0, TARGET_SIZE, TARGET_SIZE);
+        drawLetterboxed(ctx, v, vw, vh, TARGET_SIZE, TARGET_SIZE);
         urls.push(c.toDataURL("image/webp", 0.92));
         setProgress(Math.round(((i + 1) / nFrames) * 100));
         await new Promise((r) => setTimeout(r, 0));
       }
       setFrames(urls); setCurrent(0);
-    } catch (err) { console.error(err); alert("Error generando frames. Reintenta con un video 8–12s."); }
-    finally { setExtracting(false); }
+    } catch (err) {
+      console.error(err);
+      alert("Error generando frames. Reintenta con un video 8–12s.");
+    } finally {
+      setExtracting(false);
+    }
   }, [duration]);
 
-  // --- compresión cliente: 480x480, 12fps, primeros 8s, WebM ---
+  // --- compresión cliente: 480x480, 12fps, <=8s, LETTERBOX ---
   async function compressVideoToSquareWebM(file: File, maxSecs=8, fps=12, SIZE=480): Promise<Blob> {
     const src = URL.createObjectURL(file);
     const v = document.createElement("video");
@@ -93,10 +115,6 @@ export default function SpinVideoPage() {
     cn.width = SIZE; cn.height = SIZE;
     const cx = cn.getContext("2d", { willReadFrequently: true })!;
 
-    const side = Math.min(v.videoWidth, v.videoHeight);
-    const sx = (v.videoWidth - side) / 2;
-    const sy = (v.videoHeight - side) / 2;
-
     const stream = cn.captureStream(fps);
     const mime = MediaRecorder.isTypeSupported("video/webm;codecs=vp9")
       ? "video/webm;codecs=vp9"
@@ -106,20 +124,19 @@ export default function SpinVideoPage() {
     rec.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
 
     const endAt = Math.min(maxSecs, v.duration || maxSecs);
-    let rafId = 0; let started = false; const t0 = performance.now();
+    let rafId = 0; const t0 = performance.now();
 
     function loop() {
       const elapsed = (performance.now() - t0) / 1000;
       const t = Math.min(elapsed, endAt);
       v.currentTime = t;
-      cx.clearRect(0,0,SIZE,SIZE);
-      cx.drawImage(v, sx, sy, side, side, 0, 0, SIZE, SIZE);
+      drawLetterboxed(cx, v, v.videoWidth, v.videoHeight, SIZE, SIZE);
       if (elapsed < endAt) { rafId = requestAnimationFrame(loop); }
       else { rec.stop(); cancelAnimationFrame(rafId); }
     }
 
     await new Promise<void>((resolve) => {
-      rec.onstart = () => { started = true; loop(); };
+      rec.onstart = () => { loop(); };
       rec.onstop = () => resolve();
       rec.start(100); // ms
     });
@@ -128,25 +145,20 @@ export default function SpinVideoPage() {
     return new Blob(chunks, { type: mime });
   }
 
-  // 1-click: comprimir → subir a /api/rvm → recibir video limpio → extraer frames
+  // 1-click cloud: comprimir (letterbox) → /api/rvm → video limpio → extraer frames (letterbox)
   const generateCleanCloud = useCallback(async () => {
     const f = fileRef.current;
     if (!f) { alert("Elige un video primero."); return; }
     try {
       setCloudBusy(true);
-
-      // compresión previa para no reventar el límite del serverless
       const small = await compressVideoToSquareWebM(f, 8, 12, 480);
-
       const fd = new FormData();
       fd.append("video", new File([small], "clip.webm", { type: small.type }));
-
       const res = await fetch("/api/rvm", { method: "POST", body: fd });
       if (!res.ok) {
         const msg = await res.text().catch(() => String(res.status));
         throw new Error(`RVM ${res.status}: ${msg}`);
       }
-
       const blob = await res.blob();
       const cleanUrl = URL.createObjectURL(blob);
 
@@ -154,7 +166,6 @@ export default function SpinVideoPage() {
       setObjUrl(cleanUrl);
       setFrames([]); setCurrent(0); setLoaded(false); setDuration(0);
 
-      // esperar metadatos del video limpio
       await new Promise<void>((resolve) => {
         const vtag = videoRef.current;
         if (!vtag) return resolve();
@@ -171,7 +182,7 @@ export default function SpinVideoPage() {
     }
   }, [extractFrames, objUrl]);
 
-  // visor 360
+  // Visor
   const onPointerDown = (ev: React.PointerEvent) => { if (!frames.length) return; setDragging(true); (ev.target as HTMLElement).setPointerCapture?.(ev.pointerId); };
   const onPointerUp = (ev: React.PointerEvent) => { setDragging(false); (ev.target as HTMLElement).releasePointerCapture?.(ev.pointerId); };
   const onPointerMove = (ev: React.PointerEvent) => {
@@ -278,7 +289,12 @@ export default function SpinVideoPage() {
                 onPointerUp={onPointerUp}
                 onPointerMove={onPointerMove}
               >
-                <img src={frames[current]} alt={`frame ${current + 1}/${frames.length}`} className="w-full h-full object-contain" draggable={false} />
+                <img
+                  src={frames[current]}
+                  alt={`frame ${current + 1}/${frames.length}`}
+                  className="w-full h-full object-contain"
+                  draggable={false}
+                />
                 <div className="absolute bottom-2 right-3 text-[11px] text-slate-500 bg-white/70 rounded px-2 py-[2px]">
                   {current + 1}/{frames.length}
                 </div>
