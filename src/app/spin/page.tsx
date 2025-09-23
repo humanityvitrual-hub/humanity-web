@@ -5,11 +5,11 @@ import * as ort from "onnxruntime-web";
 
 export default function SpinVideoPage() {
   // ===== CONFIG =====
-  const N_FRAMES = 72;           // más suave que 36
-  const TARGET_SIZE = 640;       // salida cuadrada del frame
+  const N_FRAMES = 36;           // volvemos al baseline estable
+  const TARGET_SIZE = 640;       // salida cuadrada
   const MATTE_EDGE0 = 0.22;      // umbral suave bajo
   const MATTE_EDGE1 = 0.5;       // umbral suave alto
-  const DECAY = 0.90;            // memoria temporal (0.85–0.93 razonable)
+  const DECAY = 0.90;            // memoria temporal
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -30,11 +30,8 @@ export default function SpinVideoPage() {
   const sessionRef = useRef<ort.InferenceSession | null>(null);
   const lastMaskRef = useRef<Float32Array | null>(null);
 
-  // Fondo LAB multi-zona (top/bottom/left/right + esquinas)
+  // Fondo LAB multi-zona (para asistir el recorte); NO hacemos bbox-normalization.
   const bgLabsRef = useRef<Array<{L:number;a:number;b:number;sigma:number}>>([]);
-
-  // Normalización global de tamaño (bbox target)
-  const normRef = useRef<{maxW:number; maxH:number} | null>(null);
 
   // ===== lifecycle =====
   useEffect(() => () => { if (objUrl) URL.revokeObjectURL(objUrl); }, [objUrl]);
@@ -48,7 +45,6 @@ export default function SpinVideoPage() {
       setMatteProgress(0);
       lastMaskRef.current = null;
       bgLabsRef.current = [];
-      normRef.current = null;
       const url = URL.createObjectURL(f);
       setObjUrl(url);
     } catch (err) { console.error(err); alert("Error al cargar el video."); }
@@ -250,34 +246,32 @@ export default function SpinVideoPage() {
     const x1 = Math.min(W, box.x + box.w), y1 = Math.min(H, box.y + box.h);
     const idx=(x:number,y:number)=> (y*W + x)*4;
 
-    // regiones: top, bottom, left, right, 4 esquinas
     const regions = [
-      {x:x0, y:y0, w:x1-x0, h:pad},                          // top
-      {x:x0, y:y1-pad, w:x1-x0, h:pad},                      // bottom
-      {x:x0, y:y0, w:pad, h:y1-y0},                          // left
-      {x:x1-pad, y:y0, w:pad, h:y1-y0},                      // right
-      {x:x0, y:y0, w:pad, h:pad},                            // tl
-      {x:x1-pad, y:y0, w:pad, h:pad},                        // tr
-      {x:x0, y:y1-pad, w:pad, h:pad},                        // bl
-      {x:x1-pad, y:y1-pad, w:pad, h:pad},                    // br
+      {x:x0, y:y0, w:x1-x0, h:pad},                 // top
+      {x:x0, y:y1-pad, w:x1-x0, h:pad},             // bottom
+      {x:x0, y:y0, w:pad, h:y1-y0},                 // left
+      {x:x1-pad, y:y0, w:pad, h:y1-y0},             // right
+      {x:x0, y:y0, w:pad, h:pad},                   // tl
+      {x:x1-pad, y:y0, w:pad, h:pad},               // tr
+      {x:x0, y:y1-pad, w:pad, h:pad},               // bl
+      {x:x1-pad, y:y1-pad, w:pad, h:pad},           // br
     ];
 
     const labs:Array<{L:number;a:number;b:number;sigma:number}> = [];
-
-    for (const rgn of regions) {
+    for (const r of regions) {
       let sumL=0,sumA=0,sumB=0,n=0;
-      for (let y=rgn.y;y<rgn.y+rgn.h;y+=1) for (let x=rgn.x;x<rgn.x+rgn.w;x+=1) {
+      for (let y=r.y;y<r.y+r.h;y++) for (let x=r.x;x<r.x+r.w;x++) {
         if (x<0||x>=W||y<0||y>=H) continue;
-        const p=idx(x,y); const lab=rgb2lab(data[p],data[p+1],data[p+2]);
+        const p=(y*W + x)*4; const lab=rgb2lab(data[p],data[p+1],data[p+2]);
         sumL+=lab.L; sumA+=lab.a; sumB+=lab.b; n++;
       }
       if (!n) continue;
       const mean={L:sumL/n, a:sumA/n, b:sumB/n};
-      // varianza aprox muestreando cada 3 px
+      // sigma aprox (muestreo cada 3 px)
       let varSum=0,m=0;
-      for (let y=rgn.y;y<rgn.y+rgn.h;y+=3) for (let x=rgn.x;x<rgn.x+rgn.w;x+=3) {
+      for (let y=r.y;y<r.y+r.h;y+=3) for (let x=r.x;x<r.x+r.w;x+=3) {
         if (x<0||x>=W||y<0||y>=H) continue;
-        const p=idx(x,y); const lab=rgb2lab(data[p],data[p+1],data[p+2]);
+        const p=(y*W + x)*4; const lab=rgb2lab(data[p],data[p+1],data[p+2]);
         const d=deltaE(lab,mean); varSum+=d*d; m++;
       }
       const sigma=Math.max(2, Math.min(20, Math.sqrt(varSum/Math.max(1,m))));
@@ -291,26 +285,23 @@ export default function SpinVideoPage() {
     const W = rgba.width, H = rgba.height, data = rgba.data;
     const SIZE = box.size;
     const out = new Float32Array(SIZE*SIZE);
-    const idx=(x:number,y:number)=> (y*W + x)*4;
-
     for (let y=0;y<H;y++) for(let x=0;x<W;x++){
       const i=y*W+x;
       if (x<box.x || x>=box.x+box.w || y<box.y || y>=box.y+box.h) { out[i]=0; continue; }
-      const p=idx(x,y); const lab=rgb2lab(data[p],data[p+1],data[p+2]);
-      // normalizamos por sigma por cada fondo y tomamos la mínima distancia relativa
+      const p=(y*W + x)*4; const lab=rgb2lab(data[p],data[p+1],data[p+2]);
       let minRel = 1e9;
       for (const bg of labs) {
         const rel = deltaE(lab, {L:bg.L,a:bg.a,b:bg.b}) / (bg.sigma*2.5 + 1e-3);
         if (rel < minRel) minRel = rel;
       }
-      let val = 1 - Math.min(1, Math.max(0, minRel)); // más lejos de todos los fondos => más FG
+      let val = 1 - Math.min(1, Math.max(0, minRel));
       if (val < 0) val = 0;
       out[i] = val;
     }
     return out;
   }
 
-  // ===== Pipeline por frame =====
+  // ===== Pipeline (sin zoom, sin recorte por bbox) =====
   const runMatte = async (dataUrl: string, isFirst:boolean) => {
     const session = await loadU2Net();
     const { tensor, box, rgba } = await prepareInput(dataUrl);
@@ -340,7 +331,7 @@ export default function SpinVideoPage() {
     mask = dilate3x3(mask, SIZE, SIZE);
     mask = erode3x3(mask, SIZE, SIZE);
 
-    // 5) Histéresis temporal
+    // 5) Histéresis temporal (memoria)
     const prev = lastMaskRef.current;
     if (prev && prev.length === mask.length) {
       for (let i=0;i<mask.length;i++) {
@@ -350,43 +341,27 @@ export default function SpinVideoPage() {
     }
     lastMaskRef.current = Float32Array.from(mask);
 
-    // 6) Componente mayor
+    // 6) Componente mayor (pero SIN recortar/reescalar)
     const main = largestComponent(mask, SIZE, SIZE, 0.5);
 
-    // 7) BBox y normalización de tamaño
-    let minx=SIZE, miny=SIZE, maxx=0, maxy=0, any=false;
-    for (let y=0;y<SIZE;y++) for (let x=0;x<SIZE;x++){
-      const v = main[y*SIZE+x];
-      if (v>0) { any=true; if (x<minx)minx=x; if (x>maxx)maxx=x; if (y<miny)miny=y; if (y>maxy)maxy=y; }
-    }
-    if (!any) { minx=0;miny=0;maxx=SIZE-1;maxy=SIZE-1; }
-    const bw = Math.max(1, maxx-minx+1), bh = Math.max(1, maxy-miny+1);
-    if (!normRef.current) normRef.current = {maxW:bw, maxH:bh};
-    normRef.current.maxW = Math.max(normRef.current.maxW, bw);
-    normRef.current.maxH = Math.max(normRef.current.maxH, bh);
-
-    // 8) Construir máscara recortada al bbox y llevarla al lienzo final centrado
+    // 7) Máscara RGBA 320 del "main"
     const mcn = document.createElement("canvas"); mcn.width = SIZE; mcn.height = SIZE;
     const mctx = mcn.getContext("2d", { willReadFrequently: true })!;
     const id = mctx.createImageData(SIZE, SIZE);
     for (let i=0, q=0;i<SIZE*SIZE;i++){
-      let a = main[i]; if (a<0.45) a=0; else a = (a-0.45)/0.55;
+      let a = main[i];
+      if (a<0.45) a=0; else a = (a-0.45)/0.55; // feather leve
       const A = Math.max(0, Math.min(255, Math.round(a*255)));
       id.data[q++]=255; id.data[q++]=255; id.data[q++]=255; id.data[q++]=A;
     }
     mctx.putImageData(id, 0, 0);
 
-    const maskBox = document.createElement("canvas"); maskBox.width=bw; maskBox.height=bh;
-    const bctx = maskBox.getContext("2d")!; bctx.drawImage(mcn, minx, miny, bw, bh, 0, 0, bw, bh);
-
+    // 8) Escalar máscara del área válida (sin letterbox) a TARGET_SIZE, SIN bbox zoom
     const maskFinal = document.createElement("canvas"); maskFinal.width = TARGET_SIZE; maskFinal.height = TARGET_SIZE;
     const mfx = maskFinal.getContext("2d")!;
-    const scale = Math.min(TARGET_SIZE/Math.max(1,normRef.current.maxW), TARGET_SIZE/Math.max(1,normRef.current.maxH));
-    const dw = Math.round(bw*scale), dh = Math.round(bh*scale);
-    const dx = Math.floor((TARGET_SIZE - dw)/2), dy = Math.floor((TARGET_SIZE - dh)/2);
-    mfx.drawImage(maskBox, 0, 0, bw, bh, dx, dy, dw, dh);
+    mfx.drawImage(mcn, box.x, box.y, box.w, box.h, 0, 0, TARGET_SIZE, TARGET_SIZE);
 
-    // 9) Componer con el frame original (sobre blanco)
+    // 9) Componer con el frame original (sobre blanco), SIN recortes
     const outCn = document.createElement("canvas"); outCn.width = TARGET_SIZE; outCn.height = TARGET_SIZE;
     const outCx = outCn.getContext("2d", { willReadFrequently: true })!;
     outCx.fillStyle="#fff"; outCx.fillRect(0,0,TARGET_SIZE,TARGET_SIZE);
@@ -404,7 +379,7 @@ export default function SpinVideoPage() {
     if (!frames.length) { alert("Genera frames primero."); return; }
     try {
       setMatting(true); setMatteProgress(0);
-      lastMaskRef.current = null; bgLabsRef.current = []; normRef.current = null;
+      lastMaskRef.current = null; bgLabsRef.current = [];
 
       const out: string[] = [];
       for (let i = 0; i < frames.length; i++) {
@@ -418,18 +393,11 @@ export default function SpinVideoPage() {
     finally { setMatting(false); }
   }, [frames]);
 
-  // ===== pipeline 1-click: generar 72 y limpiar =====
-  const generate72AndClean = useCallback(async () => {
-    if (!canExtract) return;
-    await extractFrames(N_FRAMES);
-    await removeBackgroundAll();
-  }, [canExtract, extractFrames, removeBackgroundAll]);
-
   const clearVideo = () => {
     if (objUrl) URL.revokeObjectURL(objUrl);
     setObjUrl(""); setFrames([]); setLoaded(false); setDuration(0);
     setProgress(0); setCurrent(0); setMatteProgress(0);
-    lastMaskRef.current = null; bgLabsRef.current = []; normRef.current = null;
+    lastMaskRef.current = null; bgLabsRef.current = [];
   };
 
   // ===== UI =====
@@ -465,17 +433,7 @@ export default function SpinVideoPage() {
                 className="px-3 py-2 rounded-lg border bg-white/70 shadow-sm hover:shadow transition disabled:opacity-50 text-sm"
                 title={!frames.length ? "Generate frames first" : "Remove background"}
               >
-                {matting ? `Cleaning… ${matteProgress}%` : "Remove background"}
-              </button>
-
-              {/* 1-click */}
-              <button
-                disabled={!canExtract || extracting || matting}
-                onClick={generate72AndClean}
-                className="px-3 py-2 rounded-lg border bg-emerald-600 text-white shadow-sm hover:shadow transition disabled:opacity-50 text-sm"
-                title={!canExtract ? "" : "Generate & Clean (auto)"}
-              >
-                {extracting || matting ? "Working…" : "Generate 72 & Clean (auto)"}
+                {matting ? `Cleaning… ${matteProgress}%` : "Remove background (beta)"}
               </button>
 
               <button
