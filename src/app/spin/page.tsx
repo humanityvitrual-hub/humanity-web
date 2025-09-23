@@ -1,5 +1,4 @@
 "use client";
-
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 export default function SpinVideoPage() {
@@ -20,23 +19,16 @@ export default function SpinVideoPage() {
   const [current, setCurrent] = useState(0);
   const [dragging, setDragging] = useState(false);
 
-  // Cloud states
-  const [cloudBusy, setCloudBusy] = useState(false);
-  const [cloudStep, setCloudStep] = useState<"idle"|"compress"|"test"|"upload"|"processing"|"downloading">("idle");
-  const [cloudPct, setCloudPct] = useState(0);
-
   useEffect(() => () => { if (objUrl) URL.revokeObjectURL(objUrl); }, [objUrl]);
 
   const onPickFile = (e: React.ChangeEvent<HTMLInputElement>) => {
-    try {
-      const f = e.target.files?.[0];
-      if (!f) return;
-      fileRef.current = f;
-      if (objUrl) URL.revokeObjectURL(objUrl);
-      setFrames([]); setCurrent(0); setLoaded(false); setDuration(0);
-      const url = URL.createObjectURL(f);
-      setObjUrl(url);
-    } catch (err) { console.error(err); alert("Error al cargar el video."); }
+    const f = e.target.files?.[0];
+    if (!f) return;
+    fileRef.current = f;
+    if (objUrl) URL.revokeObjectURL(objUrl);
+    setFrames([]); setCurrent(0); setLoaded(false); setDuration(0);
+    const url = URL.createObjectURL(f);
+    setObjUrl(url);
   };
 
   const onLoadedMeta = () => {
@@ -51,7 +43,7 @@ export default function SpinVideoPage() {
       v.currentTime = Math.min(Math.max(t, 0), v.duration || 0);
     });
 
-  // Letterbox: escala sin recortar, fondo blanco
+  // Letterbox (no corta cabeza ni pies)
   function drawLetterboxed(
     ctx: CanvasRenderingContext2D,
     source: CanvasImageSource,
@@ -69,7 +61,6 @@ export default function SpinVideoPage() {
     ctx.drawImage(source, 0, 0, sw, sh, dx, dy, w, h);
   }
 
-  // Extraer frames (letterbox)
   const extractFrames = useCallback(async (nFrames = N_FRAMES) => {
     const v = videoRef.current, c = canvasRef.current;
     if (!v || !c || !duration) return;
@@ -94,165 +85,15 @@ export default function SpinVideoPage() {
         await new Promise((r) => setTimeout(r, 0));
       }
       setFrames(urls); setCurrent(0);
-    } catch (err) { console.error(err); alert("Error generando frames."); }
-    finally { setExtracting(false); }
+    } catch (err) {
+      console.error(err);
+      alert("Error generando frames. Reintenta con un video 8–12s.");
+    } finally {
+      setExtracting(false);
+    }
   }, [duration]);
 
-  // Compresión robusta (arranca el bucle sin esperar onstart y fuerza stop al final)
-  async function compressVideoToSquareWebM(file: File, maxSecs=8, fps=12, SIZE=480): Promise<Blob> {
-    setCloudStep("compress"); setCloudPct(0);
-
-    const src = URL.createObjectURL(file);
-    const v = document.createElement("video");
-    v.src = src; v.muted = true; v.playsInline = true;
-
-    // Asegurar metadatos
-    await new Promise<void>((res) => {
-      if (v.readyState >= 1 && Number.isFinite(v.duration)) return res();
-      v.addEventListener("loadedmetadata", () => res(), { once: true });
-    });
-
-    const cn = document.createElement("canvas");
-    cn.width = SIZE; cn.height = SIZE;
-    const cx = cn.getContext("2d", { willReadFrequently: true })!;
-
-    const stream = cn.captureStream(fps);
-    const mime = MediaRecorder.isTypeSupported("video/webm;codecs=vp9")
-      ? "video/webm;codecs=vp9"
-      : "video/webm";
-    const rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 900_000 });
-
-    const chunks: Blob[] = [];
-    rec.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
-
-    const endAt = Math.min(maxSecs, (Number.isFinite(v.duration) ? v.duration : maxSecs));
-    const t0 = performance.now();
-    let stopped = false;
-
-    // Iniciar ya y arrancar el bucle inmediatamente (no dependas de onstart)
-    rec.start(200);
-
-    function tick() {
-      const elapsed = (performance.now() - t0) / 1000;
-      const t = Math.min(elapsed, endAt);
-      try {
-        v.currentTime = t; // seek determinístico
-      } catch {}
-      drawLetterboxed(cx, v, v.videoWidth || 1, v.videoHeight || 1, SIZE, SIZE);
-      setCloudPct(Math.max(1, Math.min(100, Math.round((t / endAt) * 100))));
-      if (elapsed < endAt && !stopped) {
-        requestAnimationFrame(tick);
-      } else if (!stopped) {
-        stopped = true;
-        rec.stop();
-      }
-    }
-    requestAnimationFrame(tick);
-
-    await new Promise<void>((resolve, reject) => {
-      rec.onstop = () => resolve();
-      rec.onerror = (ev: any) => reject(ev?.error || new Error("MediaRecorder error"));
-      // “fuse” por si algo raro pasa y onstop no llega
-      setTimeout(() => { if (!stopped) { try { rec.stop(); } catch {} ; stopped = true; resolve(); } }, (endAt + 2) * 1000);
-    });
-
-    URL.revokeObjectURL(src);
-    return new Blob(chunks, { type: mime });
-  }
-
-  // Subida con progreso (XHR) — ya lo teníamos
-  function xhrUpload(url: string, fd: FormData, onProgress: (pct:number)=>void): Promise<any> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      xhr.open("POST", url, true);
-      xhr.timeout = 180000; // 3 min
-      xhr.upload.onprogress = (e) => { if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100)); };
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          try {
-            const json = JSON.parse(xhr.responseText || "{}");
-            if (xhr.status >= 200 && xhr.status < 300) resolve(json);
-            else reject(new Error(`HTTP ${xhr.status}: ${JSON.stringify(json)}`));
-          } catch {
-            if (xhr.status >= 200 && xhr.status < 300) resolve({});
-            else reject(new Error(`HTTP ${xhr.status}: ${xhr.responseText}`));
-          }
-        }
-      };
-      xhr.onerror = () => reject(new Error("network error"));
-      xhr.ontimeout = () => reject(new Error("upload timeout"));
-      xhr.send(fd);
-    });
-  }
-
-  // Pipeline Cloud RVM (async)
-  const generateCleanCloud = useCallback(async () => {
-    const f = fileRef.current;
-    if (!f) { alert("Elige un video primero."); return; }
-    try {
-      setCloudBusy(true);
-
-      // 1) Comprimir con % visible
-      const small = await compressVideoToSquareWebM(f, 8, 12, 480);
-
-      // 2) Test de subida a /echo (rápido)
-      setCloudStep("test"); setCloudPct(0);
-      const fdEcho = new FormData();
-      fdEcho.append("video", new File([small], "clip.webm", { type: small.type }));
-      const echo = await xhrUpload("/api/rvm/echo", fdEcho, (pct)=>setCloudPct(pct));
-      if (!echo?.ok) throw new Error("Echo failed");
-
-      // 3) START con progreso real
-      setCloudStep("upload"); setCloudPct(0);
-      const fd = new FormData();
-      fd.append("video", new File([small], "clip.webm", { type: small.type }));
-      const start = await xhrUpload("/api/rvm/start", fd, (pct)=>setCloudPct(pct));
-      const id = start?.id;
-      if (!id) throw new Error("start: no id");
-
-      // 4) STATUS polling
-      setCloudStep("processing"); setCloudPct(100);
-      let url: string | undefined;
-      for (let i = 0; i < 120; i++) {
-        await new Promise(r => setTimeout(r, 2000));
-        const q = await fetch(`/api/rvm/status?id=${encodeURIComponent(id)}`);
-        if (!q.ok) throw new Error(`status ${q.status}`);
-        const js = await q.json();
-        if (js.status === "succeeded" && js.url) { url = js.url; break; }
-        if (js.status === "failed" || js.status === "canceled") throw new Error(`status ${js.status}`);
-      }
-      if (!url) throw new Error("Timeout waiting for Replicate");
-
-      // 5) Descargar desde nuestro proxy y extraer frames
-      setCloudStep("downloading");
-      const fres = await fetch(`/api/rvm/fetch?url=${encodeURIComponent(url)}`);
-      if (!fres.ok) throw new Error(`fetch ${fres.status}`);
-      const blob = await fres.blob();
-      const cleanUrl = URL.createObjectURL(blob);
-
-      if (objUrl) URL.revokeObjectURL(objUrl);
-      setObjUrl(cleanUrl);
-      setFrames([]); setCurrent(0); setLoaded(false); setDuration(0);
-
-      await new Promise<void>((resolve) => {
-        const vtag = videoRef.current;
-        if (!vtag) return resolve();
-        const onMeta = () => { vtag.removeEventListener("loadedmetadata", onMeta); resolve(); };
-        vtag.addEventListener("loadedmetadata", onMeta, { once: true });
-      });
-
-      await extractFrames(N_FRAMES);
-      setCloudStep("idle"); setCloudPct(0);
-    } catch (e:any) {
-      console.error(e);
-      alert(e?.message || "Fallo procesando en la nube.");
-      setCloudStep("idle"); setCloudPct(0);
-    } finally {
-      setCloudBusy(false);
-    }
-  }, [extractFrames, objUrl]);
-
-  // Visor simple con drag
+  // Visor con arrastre
   const onPointerDown = (ev: React.PointerEvent) => { if (!frames.length) return; setDragging(true); (ev.target as HTMLElement).setPointerCapture?.(ev.pointerId); };
   const onPointerUp = (ev: React.PointerEvent) => { setDragging(false); (ev.target as HTMLElement).releasePointerCapture?.(ev.pointerId); };
   const onPointerMove = (ev: React.PointerEvent) => {
@@ -261,21 +102,21 @@ export default function SpinVideoPage() {
     if (delta) setCurrent(i => { let n = (i - delta) % frames.length; if (n < 0) n += frames.length; return n; });
   };
 
-  const canExtract = useMemo(() => loaded && !!objUrl && !extracting && !cloudBusy, [loaded, objUrl, extracting, cloudBusy]);
+  const canExtract = useMemo(() => loaded && !!objUrl && !extracting, [loaded, objUrl, extracting]);
 
   const clearVideo = () => {
     if (objUrl) URL.revokeObjectURL(objUrl);
     setObjUrl(""); setFrames([]); setLoaded(false); setDuration(0);
     setProgress(0); setCurrent(0);
-    setCloudStep("idle"); setCloudPct(0);
   };
 
   return (
     <main className="min-h-screen bg-gradient-to-b from-slate-50 to-white text-slate-900 p-6">
       <div className="max-w-6xl mx-auto pt-10">
         <h1 className="text-3xl md:text-4xl font-bold">Create a 360 product from a video</h1>
-      <p className="mt-2 text-slate-600">
-          Upload a short spin video. Extract <b>{N_FRAMES} frames</b> locally or use <b>Cloud RVM</b> (async, with client-side compression & progress).
+        <p className="mt-2 text-slate-600">
+          Upload a short spin video (8–12s). We extract <b>{N_FRAMES} frames</b> in the browser and build a 360° viewer.
+          This is <b>Preview-only</b>; no backend uploads.
         </p>
 
         <div className="mt-6 flex flex-wrap gap-3 items-center">
@@ -292,20 +133,6 @@ export default function SpinVideoPage() {
                 className="px-3 py-2 rounded-lg border bg-white/70 shadow-sm hover:shadow transition disabled:opacity-50 text-sm"
               >
                 {extracting ? "Extracting…" : `Generate ${N_FRAMES} frames (local)`}
-              </button>
-
-              <button
-                disabled={cloudBusy || !fileRef.current}
-                onClick={generateCleanCloud}
-                className="px-3 py-2 rounded-lg border bg-emerald-600 text-white shadow-sm hover:shadow transition disabled:opacity-50 text-sm"
-              >
-                {cloudBusy
-                  ? (cloudStep === "compress"   ? `Compressing… ${cloudPct}%`
-                    : cloudStep === "test"       ? `Testing upload… ${cloudPct}%`
-                    : cloudStep === "upload"     ? `Uploading… ${cloudPct}%`
-                    : cloudStep === "processing" ? "Processing in cloud…"
-                    : "Downloading…")
-                  : "Generate Clean 36 (Cloud RVM)"}
               </button>
 
               <button onClick={clearVideo} className="px-3 py-2 rounded-lg border bg-white/70 shadow-sm hover:shadow transition text-sm">
@@ -339,22 +166,12 @@ export default function SpinVideoPage() {
               />
             )}
 
-            {(extracting || cloudBusy) && (
+            {extracting && (
               <div className="mt-3">
                 <div className="h-2 bg-slate-200 rounded">
-                  <div className="h-2 bg-slate-800 rounded transition-all" style={{ width: `${extracting ? progress : (cloudStep==="processing"||cloudStep==="downloading"?100:cloudPct)}%` }} />
+                  <div className="h-2 bg-slate-800 rounded transition-all" style={{ width: `${progress}%` }} />
                 </div>
-                <p className="text-xs mt-2 text-slate-500">
-                  {extracting
-                    ? `Extracting… ${progress}%`
-                    : cloudBusy
-                      ? (cloudStep === "compress"   ? `Compressing… ${cloudPct}%`
-                        : cloudStep === "test"       ? `Testing upload… ${cloudPct}%`
-                        : cloudStep === "upload"     ? `Uploading… ${cloudPct}%`
-                        : cloudStep === "processing" ? "Processing in cloud…"
-                        : "Downloading…")
-                      : ""}
-                </p>
+                <p className="text-xs mt-2 text-slate-500">Extracting frames… {progress}%</p>
               </div>
             )}
           </div>
@@ -367,9 +184,9 @@ export default function SpinVideoPage() {
             ) : (
               <div
                 className="aspect-square relative select-none rounded-lg overflow-hidden bg-white"
-                onPointerDown={(ev)=>{ if (!frames.length) return; setDragging(true); (ev.target as HTMLElement).setPointerCapture?.(ev.pointerId); }}
-                onPointerUp={(ev)=>{ setDragging(false); (ev.target as HTMLElement).releasePointerCapture?.(ev.pointerId); }}
-                onPointerMove={(ev)=>{ if (!dragging || !frames.length) return; const d=Math.trunc(ev.movementX/6); if (d) setCurrent(i=>{ let n=(i-d)%frames.length; if(n<0)n+=frames.length; return n; }); }}
+                onPointerDown={onPointerDown}
+                onPointerUp={onPointerUp}
+                onPointerMove={onPointerMove}
               >
                 <img src={frames[current]} alt={`frame ${current + 1}/${frames.length}`} className="w-full h-full object-contain" draggable={false} />
                 <div className="absolute bottom-2 right-3 text-[11px] text-slate-500 bg-white/70 rounded px-2 py-[2px]">
