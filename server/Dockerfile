@@ -5,7 +5,6 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
     U2NET_HOME=/root/.u2net
 
-# Dependencias nativas que exige onnxruntime + PIL
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libgl1 \
     libgomp1 \
@@ -13,17 +12,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Instala deps de Python
 COPY server/requirements.txt /app/requirements.txt
 RUN python -m pip install --upgrade pip && pip install -r requirements.txt
 
-# Copia el código
 COPY server /app/server
 
-# Precarga el modelo U²Net para evitar descarga en el primer request
+# Precarga del modelo en build para evitar descarga en el primer hit
 RUN python - <<'PY'
 from rembg import new_session
-new_session('u2net')  # descarga y prepara el modelo en $U2NET_HOME
+new_session('u2net')
 print('U2Net ready')
 PY
 
