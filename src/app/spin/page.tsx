@@ -23,7 +23,7 @@ export default function SpinVideoPage() {
   // Cloud states
   const [cloudBusy, setCloudBusy] = useState(false);
   const [cloudStep, setCloudStep] = useState<"idle"|"compress"|"test"|"upload"|"processing"|"downloading">("idle");
-  const [cloudPct, setCloudPct] = useState(0); // % de compresión o upload
+  const [cloudPct, setCloudPct] = useState(0);
 
   useEffect(() => () => { if (objUrl) URL.revokeObjectURL(objUrl); }, [objUrl]);
 
@@ -51,8 +51,13 @@ export default function SpinVideoPage() {
       v.currentTime = Math.min(Math.max(t, 0), v.duration || 0);
     });
 
-  // Letterbox helper
-  function drawLetterboxed(ctx: CanvasRenderingContext2D, source: CanvasImageSource, sw: number, sh: number, dw: number, dh: number) {
+  // Letterbox: escala sin recortar, fondo blanco
+  function drawLetterboxed(
+    ctx: CanvasRenderingContext2D,
+    source: CanvasImageSource,
+    sw: number, sh: number,
+    dw: number, dh: number
+  ) {
     const s = Math.min(dw / sw, dh / sh);
     const w = Math.round(sw * s);
     const h = Math.round(sh * s);
@@ -64,6 +69,7 @@ export default function SpinVideoPage() {
     ctx.drawImage(source, 0, 0, sw, sh, dx, dy, w, h);
   }
 
+  // Extraer frames (letterbox)
   const extractFrames = useCallback(async (nFrames = N_FRAMES) => {
     const v = videoRef.current, c = canvasRef.current;
     if (!v || !c || !duration) return;
@@ -92,59 +98,82 @@ export default function SpinVideoPage() {
     finally { setExtracting(false); }
   }, [duration]);
 
-  // Compresión con % visible (estimada por tiempo)
+  // Compresión robusta (arranca el bucle sin esperar onstart y fuerza stop al final)
   async function compressVideoToSquareWebM(file: File, maxSecs=8, fps=12, SIZE=480): Promise<Blob> {
     setCloudStep("compress"); setCloudPct(0);
+
     const src = URL.createObjectURL(file);
     const v = document.createElement("video");
-    v.src = src; v.muted = true; v.playsInline = true; await v.play(); v.pause();
-    await new Promise<void>(res => {
-      if (v.readyState >= 1) return res();
+    v.src = src; v.muted = true; v.playsInline = true;
+
+    // Asegurar metadatos
+    await new Promise<void>((res) => {
+      if (v.readyState >= 1 && Number.isFinite(v.duration)) return res();
       v.addEventListener("loadedmetadata", () => res(), { once: true });
     });
 
-    const cn = document.createElement("canvas"); cn.width = SIZE; cn.height = SIZE;
+    const cn = document.createElement("canvas");
+    cn.width = SIZE; cn.height = SIZE;
     const cx = cn.getContext("2d", { willReadFrequently: true })!;
+
     const stream = cn.captureStream(fps);
-    const mime = MediaRecorder.isTypeSupported("video/webm;codecs=vp9") ? "video/webm;codecs=vp9" : "video/webm";
-    const rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 1_000_000 });
+    const mime = MediaRecorder.isTypeSupported("video/webm;codecs=vp9")
+      ? "video/webm;codecs=vp9"
+      : "video/webm";
+    const rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 900_000 });
+
     const chunks: Blob[] = [];
     rec.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
 
-    const endAt = Math.min(maxSecs, v.duration || maxSecs);
+    const endAt = Math.min(maxSecs, (Number.isFinite(v.duration) ? v.duration : maxSecs));
     const t0 = performance.now();
-    let rafId = 0;
-    function loop() {
+    let stopped = false;
+
+    // Iniciar ya y arrancar el bucle inmediatamente (no dependas de onstart)
+    rec.start(200);
+
+    function tick() {
       const elapsed = (performance.now() - t0) / 1000;
       const t = Math.min(elapsed, endAt);
-      v.currentTime = t;
-      drawLetterboxed(cx, v, v.videoWidth, v.videoHeight, SIZE, SIZE);
-      setCloudPct(Math.round((t / endAt) * 100));
-      if (elapsed < endAt) { rafId = requestAnimationFrame(loop); }
-      else { rec.stop(); cancelAnimationFrame(rafId); }
+      try {
+        v.currentTime = t; // seek determinístico
+      } catch {}
+      drawLetterboxed(cx, v, v.videoWidth || 1, v.videoHeight || 1, SIZE, SIZE);
+      setCloudPct(Math.max(1, Math.min(100, Math.round((t / endAt) * 100))));
+      if (elapsed < endAt && !stopped) {
+        requestAnimationFrame(tick);
+      } else if (!stopped) {
+        stopped = true;
+        rec.stop();
+      }
     }
+    requestAnimationFrame(tick);
 
-    await new Promise<void>((resolve) => { rec.onstart = () => { loop(); }; rec.onstop = () => resolve(); rec.start(100); });
+    await new Promise<void>((resolve, reject) => {
+      rec.onstop = () => resolve();
+      rec.onerror = (ev: any) => reject(ev?.error || new Error("MediaRecorder error"));
+      // “fuse” por si algo raro pasa y onstop no llega
+      setTimeout(() => { if (!stopped) { try { rec.stop(); } catch {} ; stopped = true; resolve(); } }, (endAt + 2) * 1000);
+    });
+
     URL.revokeObjectURL(src);
     return new Blob(chunks, { type: mime });
   }
 
-  // Subida con progreso usando XHR
+  // Subida con progreso (XHR) — ya lo teníamos
   function xhrUpload(url: string, fd: FormData, onProgress: (pct:number)=>void): Promise<any> {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
       xhr.open("POST", url, true);
-      xhr.timeout = 120000; // 120s
-      xhr.upload.onprogress = (e) => {
-        if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
-      };
+      xhr.timeout = 180000; // 3 min
+      xhr.upload.onprogress = (e) => { if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100)); };
       xhr.onreadystatechange = () => {
         if (xhr.readyState === 4) {
           try {
             const json = JSON.parse(xhr.responseText || "{}");
             if (xhr.status >= 200 && xhr.status < 300) resolve(json);
             else reject(new Error(`HTTP ${xhr.status}: ${JSON.stringify(json)}`));
-          } catch (err) {
+          } catch {
             if (xhr.status >= 200 && xhr.status < 300) resolve({});
             else reject(new Error(`HTTP ${xhr.status}: ${xhr.responseText}`));
           }
@@ -156,7 +185,7 @@ export default function SpinVideoPage() {
     });
   }
 
-  // Cloud RVM async pipeline con progreso visible
+  // Pipeline Cloud RVM (async)
   const generateCleanCloud = useCallback(async () => {
     const f = fileRef.current;
     if (!f) { alert("Elige un video primero."); return; }
@@ -166,14 +195,14 @@ export default function SpinVideoPage() {
       // 1) Comprimir con % visible
       const small = await compressVideoToSquareWebM(f, 8, 12, 480);
 
-      // 2) Test de subida a /echo (rápido, devuelve size)
+      // 2) Test de subida a /echo (rápido)
       setCloudStep("test"); setCloudPct(0);
       const fdEcho = new FormData();
       fdEcho.append("video", new File([small], "clip.webm", { type: small.type }));
       const echo = await xhrUpload("/api/rvm/echo", fdEcho, (pct)=>setCloudPct(pct));
       if (!echo?.ok) throw new Error("Echo failed");
 
-      // 3) START con progreso de subida
+      // 3) START con progreso real
       setCloudStep("upload"); setCloudPct(0);
       const fd = new FormData();
       fd.append("video", new File([small], "clip.webm", { type: small.type }));
@@ -181,7 +210,7 @@ export default function SpinVideoPage() {
       const id = start?.id;
       if (!id) throw new Error("start: no id");
 
-      // 4) POLL STATUS
+      // 4) STATUS polling
       setCloudStep("processing"); setCloudPct(100);
       let url: string | undefined;
       for (let i = 0; i < 120; i++) {
@@ -194,7 +223,7 @@ export default function SpinVideoPage() {
       }
       if (!url) throw new Error("Timeout waiting for Replicate");
 
-      // 5) FETCH y extraer
+      // 5) Descargar desde nuestro proxy y extraer frames
       setCloudStep("downloading");
       const fres = await fetch(`/api/rvm/fetch?url=${encodeURIComponent(url)}`);
       if (!fres.ok) throw new Error(`fetch ${fres.status}`);
@@ -223,7 +252,7 @@ export default function SpinVideoPage() {
     }
   }, [extractFrames, objUrl]);
 
-  // Visor
+  // Visor simple con drag
   const onPointerDown = (ev: React.PointerEvent) => { if (!frames.length) return; setDragging(true); (ev.target as HTMLElement).setPointerCapture?.(ev.pointerId); };
   const onPointerUp = (ev: React.PointerEvent) => { setDragging(false); (ev.target as HTMLElement).releasePointerCapture?.(ev.pointerId); };
   const onPointerMove = (ev: React.PointerEvent) => {
@@ -245,7 +274,7 @@ export default function SpinVideoPage() {
     <main className="min-h-screen bg-gradient-to-b from-slate-50 to-white text-slate-900 p-6">
       <div className="max-w-6xl mx-auto pt-10">
         <h1 className="text-3xl md:text-4xl font-bold">Create a 360 product from a video</h1>
-        <p className="mt-2 text-slate-600">
+      <p className="mt-2 text-slate-600">
           Upload a short spin video. Extract <b>{N_FRAMES} frames</b> locally or use <b>Cloud RVM</b> (async, with client-side compression & progress).
         </p>
 
