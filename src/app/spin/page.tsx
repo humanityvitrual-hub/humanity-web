@@ -3,9 +3,12 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+type FitMode = "fit" | "crop";
+
 export default function SpinVideoPage() {
   const N_FRAMES = 36;
   const TARGET_SIZE = 640;
+  const SAFE = 0.92; // margen de seguridad para evitar tocar bordes
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -20,10 +23,10 @@ export default function SpinVideoPage() {
   const [current, setCurrent] = useState(0);
   const [dragging, setDragging] = useState(false);
 
+  const [fitMode, setFitMode] = useState<FitMode>("fit"); // <<< evitar recortes
+
   useEffect(() => {
-    return () => {
-      if (objUrl) URL.revokeObjectURL(objUrl);
-    };
+    return () => { if (objUrl) URL.revokeObjectURL(objUrl); };
   }, [objUrl]);
 
   const onPickFile = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -31,117 +34,88 @@ export default function SpinVideoPage() {
       const f = e.target.files?.[0];
       if (!f) return;
       if (objUrl) URL.revokeObjectURL(objUrl);
-      setFrames([]);
-      setCurrent(0);
-      setLoaded(false);
-      setDuration(0);
-      const url = URL.createObjectURL(f);
-      setObjUrl(url);
+      setFrames([]); setCurrent(0); setLoaded(false); setDuration(0);
+      setObjUrl(URL.createObjectURL(f));
     } catch (err) {
-      console.error(err);
-      alert("Error al cargar el video.");
+      console.error(err); alert("Error al cargar el video.");
     }
   };
 
   const onLoadedMeta = () => {
-    const v = videoRef.current;
-    if (!v) return;
-    setDuration(v.duration || 0);
-    setLoaded(true);
-    v.pause();
-    v.currentTime = 0;
+    const v = videoRef.current; if (!v) return;
+    setDuration(v.duration || 0); setLoaded(true);
+    v.pause(); v.currentTime = 0;
   };
 
   const seekTo = (v: HTMLVideoElement, t: number) =>
     new Promise<void>((resolve) => {
-      const onSeek = () => {
-        v.removeEventListener("seeked", onSeek);
-        resolve();
-      };
+      const onSeek = () => { v.removeEventListener("seeked", onSeek); resolve(); };
       v.addEventListener("seeked", onSeek, { once: true });
       v.currentTime = Math.min(Math.max(t, 0), v.duration || 0);
     });
 
   const extractFrames = useCallback(async () => {
-    const v = videoRef.current;
-    const c = canvasRef.current;
+    const v = videoRef.current, c = canvasRef.current;
     if (!v || !c || !duration) return;
 
     try {
       try { v.muted = true; await v.play(); v.pause(); } catch {}
+      const vw = v.videoWidth, vh = v.videoHeight;
+      if (!vw || !vh) throw new Error("Video sin dimensiones válidas.");
 
-      const vw = v.videoWidth;
-      const vh = v.videoHeight;
-      if (!vw || !vh) throw new Error("El video no tiene dimensiones válidas.");
-
-      const side = Math.min(vw, vh);
-      const sx = (vw - side) / 2;
-      const sy = (vh - side) / 2;
-
-      c.width = TARGET_SIZE;
-      c.height = TARGET_SIZE;
+      c.width = TARGET_SIZE; c.height = TARGET_SIZE;
       const ctx = c.getContext("2d", { willReadFrequently: true });
-      if (!ctx) throw new Error("No se pudo obtener el contexto 2D del canvas.");
+      if (!ctx) throw new Error("No hay contexto 2D.");
 
-      setExtracting(true);
-      setProgress(0);
-
+      setExtracting(true); setProgress(0);
       const urls: string[] = [];
       const dt = duration / N_FRAMES;
 
       for (let i = 0; i < N_FRAMES; i++) {
-        const t = i * dt;
-        await seekTo(v, t);
+        await seekTo(v, i * dt);
         ctx.clearRect(0, 0, c.width, c.height);
-        ctx.drawImage(v, sx, sy, side, side, 0, 0, TARGET_SIZE, TARGET_SIZE);
-        const dataUrl = c.toDataURL("image/webp", 0.92);
-        urls.push(dataUrl);
+
+        if (fitMode === "crop") {
+          // Recorte cuadrado centrado (antes), con margen SAFE
+          const side = Math.min(vw, vh) * SAFE;
+          const sx = (vw - side) / 2;
+          const sy = (vh - side) / 2;
+          ctx.drawImage(v, sx, sy, side, side, 0, 0, TARGET_SIZE, TARGET_SIZE);
+        } else {
+          // FIT/LETTERBOX: no recorta; escala para que TODO quepa
+          const scale = Math.min(TARGET_SIZE / vw, TARGET_SIZE / vh) * SAFE;
+          const dw = vw * scale, dh = vh * scale;
+          const dx = (TARGET_SIZE - dw) / 2;
+          const dy = (TARGET_SIZE - dh) / 2;
+          ctx.fillStyle = "#ffffff"; // fondo blanco (evita bordes negros)
+          ctx.fillRect(0, 0, TARGET_SIZE, TARGET_SIZE);
+          ctx.drawImage(v, 0, 0, vw, vh, dx, dy, dw, dh);
+        }
+
+        urls.push(c.toDataURL("image/webp", 0.92));
         setProgress(Math.round(((i + 1) / N_FRAMES) * 100));
         await new Promise((r) => setTimeout(r, 0));
       }
 
-      setFrames(urls);
-      setCurrent(0);
+      setFrames(urls); setCurrent(0);
     } catch (err) {
-      console.error(err);
-      alert("Error generando frames. Reintenta con un video 8–12s.");
-    } finally {
-      setExtracting(false);
-    }
-  }, [duration]);
+      console.error(err); alert("Error generando frames. Intenta con video 8–12s.");
+    } finally { setExtracting(false); }
+  }, [duration, fitMode]);
 
-  const onPointerDown = (ev: React.PointerEvent) => {
-    if (!frames.length) return;
-    setDragging(true);
-    (ev.target as HTMLElement).setPointerCapture?.(ev.pointerId);
-  };
-  const onPointerUp = (ev: React.PointerEvent) => {
-    setDragging(false);
-    (ev.target as HTMLElement).releasePointerCapture?.(ev.pointerId);
-  };
+  const onPointerDown = (ev: React.PointerEvent) => { if (!frames.length) return; setDragging(true); (ev.target as HTMLElement).setPointerCapture?.(ev.pointerId); };
+  const onPointerUp =   (ev: React.PointerEvent) => { setDragging(false); (ev.target as HTMLElement).releasePointerCapture?.(ev.pointerId); };
   const onPointerMove = (ev: React.PointerEvent) => {
     if (!dragging || !frames.length) return;
-    const SENS = 6;
-    const delta = Math.trunc(ev.movementX / SENS);
-    if (delta !== 0) {
-      setCurrent((i) => {
-        let n = (i - delta) % frames.length;
-        if (n < 0) n += frames.length;
-        return n;
-      });
-    }
+    const SENS = 6, delta = Math.trunc(ev.movementX / SENS);
+    if (delta) setCurrent((i) => { let n = (i - delta) % frames.length; if (n < 0) n += frames.length; return n; });
   };
 
   const canExtract = useMemo(() => loaded && !!objUrl && !extracting, [loaded, objUrl, extracting]);
 
   const clearVideo = () => {
     if (objUrl) URL.revokeObjectURL(objUrl);
-    setObjUrl("");
-    setFrames([]);
-    setLoaded(false);
-    setDuration(0);
-    setProgress(0);
-    setCurrent(0);
+    setObjUrl(""); setFrames([]); setLoaded(false); setDuration(0); setProgress(0); setCurrent(0);
   };
 
   return (
@@ -170,18 +144,24 @@ export default function SpinVideoPage() {
                 {extracting ? "Extracting…" : "Generate 36 frames"}
               </button>
 
-              <button
-                onClick={clearVideo}
-                className="px-3 py-2 rounded-lg border bg-white/70 shadow-sm hover:shadow transition text-sm"
-              >
+              <button onClick={clearVideo} className="px-3 py-2 rounded-lg border bg-white/70 shadow-sm hover:shadow transition text-sm">
                 Reset
               </button>
 
-              {loaded ? (
-                <span className="text-emerald-600 text-sm">Video ready</span>
-              ) : objUrl ? (
-                <span className="text-slate-500 text-sm">Loading metadata…</span>
-              ) : null}
+              {/* Toggle FIT/CROP */}
+              <div className="inline-flex items-center gap-1 text-sm ml-2">
+                <span className="text-slate-600">Framing:</span>
+                <button
+                  onClick={() => setFitMode("fit")}
+                  className={`px-2 py-1 rounded border ${fitMode==="fit" ? "bg-slate-900 text-white" : "bg-white/70"}`}
+                  title="No recorta (letterbox)"
+                >FIT</button>
+                <button
+                  onClick={() => setFitMode("crop")}
+                  className={`px-2 py-1 rounded border ${fitMode==="crop" ? "bg-slate-900 text-white" : "bg-white/70"}`}
+                  title="Recorte centrado (puede cortar bordes)"
+                >CROP</button>
+            </div>
             </>
           )}
         </div>
@@ -197,10 +177,7 @@ export default function SpinVideoPage() {
                 ref={videoRef}
                 src={objUrl}
                 className="w-full max-h-[70vh] rounded-lg"
-                playsInline
-                muted
-                controls
-                onLoadedMetadata={onLoadedMeta}
+                playsInline muted controls onLoadedMetadata={onLoadedMeta}
               />
             )}
 
@@ -222,16 +199,9 @@ export default function SpinVideoPage() {
             ) : (
               <div
                 className="aspect-square relative select-none rounded-lg overflow-hidden bg-white"
-                onPointerDown={onPointerDown}
-                onPointerUp={onPointerUp}
-                onPointerMove={onPointerMove}
+                onPointerDown={onPointerDown} onPointerUp={onPointerUp} onPointerMove={onPointerMove}
               >
-                <img
-                  src={frames[current]}
-                  alt={`frame ${current + 1}/${frames.length}`}
-                  className="w-full h-full object-contain"
-                  draggable={false}
-                />
+                <img src={frames[current]} alt={`frame ${current + 1}/${frames.length}`} className="w-full h-full object-contain" draggable={false} />
                 <div className="absolute bottom-2 right-3 text-[11px] text-slate-500 bg-white/70 rounded px-2 py-[2px]">
                   {current + 1}/{frames.length}
                 </div>
