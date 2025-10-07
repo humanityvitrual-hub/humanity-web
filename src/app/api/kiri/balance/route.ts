@@ -13,8 +13,17 @@ export async function GET() {
       headers: { Authorization: `Bearer ${key}` },
       cache: "no-store",
     });
-    const data = await resp.json().catch(() => null);
-    return NextResponse.json({ ok: resp.ok, status: resp.status, data }, { status: resp.ok ? 200 : resp.status });
+    const txt = await resp.text();
+    // Intenta parsear JSON; si no es JSON, devuelve texto crudo con su content-type
+    try {
+      const data = JSON.parse(txt);
+      return NextResponse.json(data, { status: resp.status });
+    } catch {
+      return new NextResponse(txt, {
+        status: resp.status,
+        headers: { "content-type": resp.headers.get("content-type") || "text/plain" },
+      });
+    }
   } catch (err: any) {
     return NextResponse.json({ ok: false, error: String(err) }, { status: 500 });
   }
