@@ -1,3 +1,4 @@
+import KiriButton from "./components/KiriButton";
 // src/app/spin/page.tsx
 "use client";
 
