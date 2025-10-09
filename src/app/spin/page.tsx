@@ -1,4 +1,5 @@
 "use client";
+import "./components/kiri-fab";
 import KiriButton from "./components/KiriButton";
 // src/app/spin/page.tsx
 
