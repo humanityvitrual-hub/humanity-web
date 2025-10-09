@@ -1,6 +1,6 @@
+"use client";
 import KiriButton from "./components/KiriButton";
 // src/app/spin/page.tsx
-"use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
