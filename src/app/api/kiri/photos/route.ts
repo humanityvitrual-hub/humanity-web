@@ -12,21 +12,29 @@ export async function POST(req: Request) {
   try {
     const inForm = await req.formData();
 
-    // KIRI espera: image (file), photoNo (1..N). Opcionales: serialize y name.
-    const img = inForm.get("image");
+    // Campos esperados
+    const imgField = inForm.get("image");
     const photoNo = inForm.get("photoNo");
     const serialize = inForm.get("serialize");
     const name = inForm.get("name");
 
-    if (!(img instanceof Blob)) {
+    if (!(imgField instanceof File)) {
       return NextResponse.json({ ok: false, error: "image is required" }, { status: 400 });
     }
     if (!photoNo) {
       return NextResponse.json({ ok: false, error: "photoNo is required" }, { status: 400 });
     }
 
+    // ⚠️ CLONAR BYTES: leer el File entrante y recrear un Blob/File nuevo
+    const buf = await imgField.arrayBuffer();
+    const cloned = new File([buf], imgField.name || "photo.jpg", {
+      type: imgField.type || "image/jpeg",
+      lastModified: Date.now(),
+    });
+
+    // Construir el form para KIRI
     const outForm = new FormData();
-    outForm.append("image", img, "photo.jpg");
+    outForm.append("image", cloned, cloned.name);
     outForm.append("photoNo", String(photoNo));
     if (serialize) outForm.append("serialize", String(serialize));
     if (name) outForm.append("name", String(name));
